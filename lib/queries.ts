@@ -69,7 +69,7 @@ FROM movie_details d
 WHERE d.rating_count > 0
   AND ($1::text IS NULL OR $1 = ANY (d.genres))
   AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = d.id)
-ORDER BY score DESC, d.rating_count DESC
+ORDER BY score DESC, d.rating_count DESC, d.title
 LIMIT 12`,
 
   // ---------- Vector side ----------

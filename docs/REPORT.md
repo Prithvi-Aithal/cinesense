@@ -212,7 +212,7 @@ SELECT d.*, ROUND((d.avg_rating * d.rating_count + 3.5 * 3) / (d.rating_count + 
 FROM movie_details d
 WHERE d.rating_count > 0
   AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = d.id)
-ORDER BY score DESC, d.rating_count DESC
+ORDER BY score DESC, d.rating_count DESC, d.title
 LIMIT 12;
 ```
 **Bayesian average:** it acts as if each movie had 3 extra ratings of 3.5 (the prior), so one 5★ rating can't beat a movie with many 4.5★ ratings.
