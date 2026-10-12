@@ -232,7 +232,7 @@ LIMIT 12;
 
 **More like this**, nearest neighbours:
 - Interstellar → Gravity, The Martian, Arrival, 2001: A Space Odyssey, Dune, Moon
-- Hereditary → The Babadook, The Exorcist, The Shining, The Conjuring, A Quiet Place (and Parasite, which is close in tone)
+- Hereditary → Parasite (no shared genre, but both describe a family unravelling, which is what the embedding picks up), then The Babadook, The Exorcist, The Shining, The Conjuring, A Quiet Place
 - Spirited Away → My Neighbor Totoro, Up, Inside Out
 
 **Previous version vs this one.** The first prototype used a hashing-trick bag-of-words vector (256 dims). It only matched shared words, so "spaceship" and "starship" were unrelated, and with a sci-fi/action user, Romance titles outranked unrated Action titles. Switching to a sentence-embedding model (all-MiniLM-L6-v2) changed only the vector column dimension and how the vectors are produced. The schema, queries and API stayed the same.
