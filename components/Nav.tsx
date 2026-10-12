@@ -52,7 +52,7 @@ export default function Nav() {
             );
           })}
         </nav>
-        <div className="ml-auto flex items-center gap-2 text-sm">
+        <div className="ml-auto flex min-w-0 items-center gap-2 text-sm">
           {adding ? (
             <form onSubmit={submit} className="flex items-center gap-2">
               <input
@@ -77,7 +77,7 @@ export default function Nav() {
               <select
                 value={user?.id ?? ""}
                 onChange={(e) => (e.target.value === "new" ? setAdding(true) : setUserId(Number(e.target.value)))}
-                className="rounded-md border border-line bg-panel px-2 py-1 outline-none focus:border-gold"
+                className="max-w-48 truncate rounded-md border border-line bg-panel px-2 py-1 outline-none focus:border-gold"
               >
                 {users.map((u) => (
                   <option key={u.id} value={u.id}>
