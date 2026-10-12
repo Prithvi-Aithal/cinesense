@@ -1,0 +1,15 @@
+[
+  { "name": "Aarav",  "likes": ["Sci-Fi", "Thriller"],     "dislikes": ["Romance"] },
+  { "name": "Meera",  "likes": ["Romance", "Drama"],       "dislikes": ["Horror"] },
+  { "name": "Kabir",  "likes": ["Horror", "Mystery"],      "dislikes": ["Animation"] },
+  { "name": "Zoya",   "likes": ["Animation", "Fantasy"],   "dislikes": ["Crime"] },
+  { "name": "Rohan",  "likes": ["Action", "Crime"],        "dislikes": ["Romance"] },
+  { "name": "Isha",   "likes": ["Comedy", "Romance"],      "dislikes": ["Horror"] },
+  { "name": "Dev",    "likes": ["Crime", "Drama"],         "dislikes": ["Fantasy"] },
+  { "name": "Ananya", "likes": ["Adventure", "Fantasy"],   "dislikes": ["Horror"] },
+  { "name": "Vikram", "likes": ["Thriller", "Mystery"],    "dislikes": ["Comedy"] },
+  { "name": "Sara",   "likes": ["Drama", "Comedy"],        "dislikes": ["Sci-Fi"] },
+  { "name": "Neel",   "likes": ["Sci-Fi", "Action"],       "dislikes": ["Drama"] },
+  { "name": "Tara",   "likes": ["Horror", "Thriller"],     "dislikes": ["Comedy"] },
+  { "name": "New Viewer", "likes": [], "dislikes": [] }
+]
