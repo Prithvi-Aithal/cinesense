@@ -24,7 +24,7 @@ Every page has a **"Show the query behind this"** panel with the exact SQL the A
 ## Stack
 
 - **Next.js 16** (App Router, TypeScript, Tailwind v4). API route handlers are the backend, and the browser never touches the database.
-- **PostgreSQL 16 + pgvector 0.6+**: relational tables and a `vector(384)` column in the same database, with an HNSW index.
+- **PostgreSQL 16 + pgvector 0.8+**: relational tables and a `vector(384)` column in the same database, with an HNSW index. (0.8 adds iterative index scans, which keep genre-filtered vector searches from returning too few rows.)
 - **Embeddings:** `all-MiniLM-L6-v2` (384 dims) run locally through `@huggingface/transformers`. No API key and no paid service.
 - `pg` driver, `tsx` for the seed script.
 
