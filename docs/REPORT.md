@@ -212,7 +212,8 @@ DO UPDATE SET rating = EXCLUDED.rating;
 WITH nn AS (
   SELECT m.id, m.embedding <=> (SELECT embedding FROM movies WHERE id = $1) AS distance
   FROM movies m
-  WHERE m.id <> $1
+  WHERE m.id <> $1 AND m.embedding IS NOT NULL
+    AND (SELECT embedding FROM movies WHERE id = $1) IS NOT NULL   -- no vector yet: no neighbours
     AND (NOT $2::boolean OR EXISTS (
           SELECT 1 FROM movie_genres a JOIN movie_genres b ON b.genre_id = a.genre_id
           WHERE a.movie_id = m.id AND b.movie_id = $1))
@@ -233,7 +234,8 @@ ORDER BY nn.distance;
 WITH nn AS (
   SELECT m.id, m.embedding <=> $1::vector AS distance
   FROM movies m
-  WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = m.id)
+  WHERE m.embedding IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = m.id)
     AND ($3::text IS NULL OR EXISTS (
           SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id
           WHERE mg.movie_id = m.id AND g.name = $3))

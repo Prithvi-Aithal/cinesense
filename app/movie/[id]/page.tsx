@@ -16,6 +16,7 @@ export default function MoviePage() {
   const userId = user?.id ?? null;
   const [movie, setMovie] = useState<Movie | null>(null);
   const [similar, setSimilar] = useState<Movie[]>([]);
+  const [similarLoaded, setSimilarLoaded] = useState(false);
   const [trail, setTrail] = useState<TrailStep[]>([]);
   const [sameGenre, setSameGenre] = useState(false);
   const [sql, setSql] = useState<{ detail?: string; similar?: string; trail?: string }>({});
@@ -45,6 +46,7 @@ export default function MoviePage() {
     api<{ items: Movie[]; query: string }>(`/api/movies/${id}/similar${sameGenre ? "?sameGenre=1" : ""}`)
       .then((d) => {
         setSimilar(d.items);
+        setSimilarLoaded(true);
         setSql((s) => ({ ...s, similar: d.query }));
       })
       .catch(console.error);
@@ -131,6 +133,11 @@ export default function MoviePage() {
             Only movies sharing a genre (SQL filter)
           </label>
         </div>
+        {similarLoaded && similar.length === 0 && (
+          <p className="rounded-lg border border-line bg-panel px-4 py-6 text-sm text-muted">
+            This movie has no embedding yet, so there is nothing to compare it with. An admin can re-embed it.
+          </p>
+        )}
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {similar.map((m) => (
             <MovieCard key={m.id} movie={m} badge={m.similarity ? `${Math.round(Number(m.similarity) * 100)}% similar` : null} />

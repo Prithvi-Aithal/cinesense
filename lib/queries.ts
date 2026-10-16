@@ -108,6 +108,7 @@ WITH nn AS (
   SELECT m.id, m.embedding <=> (SELECT embedding FROM movies WHERE id = $1) AS distance
   FROM movies m
   WHERE m.id <> $1 AND m.embedding IS NOT NULL
+    AND (SELECT embedding FROM movies WHERE id = $1) IS NOT NULL   -- no vector yet: no neighbours
     AND (NOT $2::boolean OR EXISTS (
           SELECT 1 FROM movie_genres a JOIN movie_genres b ON b.genre_id = a.genre_id
           WHERE a.movie_id = m.id AND b.movie_id = $1))
