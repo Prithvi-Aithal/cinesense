@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
-import { query } from "@/lib/db";
 import { SQL } from "@/lib/queries";
-import { handle } from "@/lib/http";
+import { route } from "@/lib/http";
 
-export const GET = handle(async () => {
-  return NextResponse.json({ items: await query(SQL.listGenres), query: SQL.listGenres });
-});
+export const GET = route(
+  async (_req, { q }) => NextResponse.json({ items: await q(SQL.listGenres), query: SQL.listGenres }),
+  { readOnly: true }
+);

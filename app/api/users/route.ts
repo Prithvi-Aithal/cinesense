@@ -1,16 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
-import { query } from "@/lib/db";
+import { NextResponse } from "next/server";
 import { SQL } from "@/lib/queries";
-import { badRequest, handle, textParam } from "@/lib/http";
+import { route } from "@/lib/http";
 
-export const GET = handle(async () => {
-  return NextResponse.json({ items: await query(SQL.listUsers) });
-});
-
-export const POST = handle(async (req: NextRequest) => {
-  const body = await req.json().catch(() => ({}));
-  const name = textParam(body.name);
-  if (!name || name.length > 60) return badRequest("Name must be 1-60 characters.");
-  const [user] = await query(SQL.createUser, [name]);
-  return NextResponse.json({ ...user, rating_count: 0 }, { status: 201 });
-});
+// GET /api/users  (admin) -> every account with its role and activity.
+// Accounts are created through /api/auth/register.
+export const GET = route(
+  async (_req, { q }) => NextResponse.json({ items: await q(SQL.listUsers), query: SQL.listUsers }),
+  { role: "admin", readOnly: true }
+);

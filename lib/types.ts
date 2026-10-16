@@ -14,4 +14,7 @@ export type Movie = {
   score?: string | null;
 };
 
-export type User = { id: number; name: string; rating_count: number };
+export type Role = "admin" | "viewer";
+export type User = { id: number; name: string; role: Role; rating_count: number };
+
+export type TrailStep = { step: number; id: number; title: string; similarity: string | null };

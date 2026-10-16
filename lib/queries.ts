@@ -9,14 +9,24 @@ export const SQL = {
   // ---------- SQL side ----------
   listGenres: `SELECT id, name FROM genres ORDER BY name`,
 
+  // ---------- Accounts (the functions are in db/functions.sql) ----------
+  register: `SELECT register_user($1, $2) AS id`,
+  login: `SELECT token, user_id, name, role FROM login($1, $2)`,
+  logout: `SELECT logout()`,
+  myRatingCount: `SELECT COUNT(*)::int AS rating_count FROM ratings WHERE user_id = $1`,
+
+  // Admin: every account with its activity (password_hash is not even readable by admins).
   listUsers: `
-SELECT u.id, u.name, COUNT(r.movie_id)::int AS rating_count
+SELECT u.id, u.name, u.role, u.created_at,
+       COUNT(r.movie_id)::int AS rating_count,
+       (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id = u.id AND s.expires_at > now()) AS active_sessions
 FROM users u
 LEFT JOIN ratings r ON r.user_id = u.id
 GROUP BY u.id
-ORDER BY u.id`,
+ORDER BY u.role, u.name`,
 
-  createUser: `INSERT INTO users (name) VALUES ($1) RETURNING id, name`,
+  setUserRole: `CALL set_user_role($1, $2)`,
+  deleteUser: `DELETE FROM users WHERE id = $1 RETURNING id`,
 
   // Browse: genre filter + keyword search (exact substring match only).
   keywordSearch: `
@@ -41,7 +51,7 @@ WHERE d.id = $1`,
 INSERT INTO ratings (user_id, movie_id, rating)
 VALUES ($1, $2, $3)
 ON CONFLICT (user_id, movie_id)
-DO UPDATE SET rating = EXCLUDED.rating, rated_at = now()
+DO UPDATE SET rating = EXCLUDED.rating   -- trg_ratings_touch moves rated_at
 RETURNING user_id, movie_id, rating`,
 
   deleteRating: `DELETE FROM ratings WHERE user_id = $1 AND movie_id = $2`,
@@ -58,13 +68,13 @@ ORDER BY r.rating DESC, r.rated_at DESC`,
 SELECT m.id, m.title, r.rating, m.embedding::text AS embedding
 FROM ratings r
 JOIN movies m ON m.id = r.movie_id
-WHERE r.user_id = $1`,
+WHERE r.user_id = $1 AND m.embedding IS NOT NULL`,
 
-  // Cold start: popularity. A Bayesian average pulls movies with few ratings towards the
-  // global mean (3.5), so one lucky 5-star rating can't put a movie at the top.
+  // Cold start: popularity. bayesian_score() (a stored function) pulls movies with few ratings
+  // towards the global mean (3.5), so one lucky 5-star rating can't put a movie at the top.
   popular: `
 SELECT d.*, NULL::int AS my_rating,
-       ROUND((d.avg_rating * d.rating_count + 3.5 * 3) / (d.rating_count + 3), 2) AS score
+       bayesian_score(d.avg_rating, d.rating_count) AS score
 FROM movie_details d
 WHERE d.rating_count > 0
   AND ($1::text IS NULL OR $1 = ANY (d.genres))
@@ -78,7 +88,8 @@ LIMIT 12`,
 WITH nn AS (
   SELECT m.id, m.embedding <=> $1::vector AS distance
   FROM movies m
-  WHERE ($2::text IS NULL OR EXISTS (
+  WHERE m.embedding IS NOT NULL
+    AND ($2::text IS NULL OR EXISTS (
           SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id
           WHERE mg.movie_id = m.id AND g.name = $2))
   ORDER BY m.embedding <=> $1::vector
@@ -96,7 +107,7 @@ ORDER BY nn.distance`,
 WITH nn AS (
   SELECT m.id, m.embedding <=> (SELECT embedding FROM movies WHERE id = $1) AS distance
   FROM movies m
-  WHERE m.id <> $1
+  WHERE m.id <> $1 AND m.embedding IS NOT NULL
     AND (NOT $2::boolean OR EXISTS (
           SELECT 1 FROM movie_genres a JOIN movie_genres b ON b.genre_id = a.genre_id
           WHERE a.movie_id = m.id AND b.movie_id = $1))
@@ -116,7 +127,8 @@ ORDER BY nn.distance`,
 WITH nn AS (
   SELECT m.id, m.embedding <=> $1::vector AS distance
   FROM movies m
-  WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = m.id)
+  WHERE m.embedding IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = $2 AND r.movie_id = m.id)
     AND ($3::text IS NULL OR EXISTS (
           SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id
           WHERE mg.movie_id = m.id AND g.name = $3))
@@ -137,4 +149,47 @@ LEFT JOIN LATERAL (
   LIMIT 1
 ) because ON true
 ORDER BY nn.distance`,
+
+  // Recursive CTE (wrapped in a stored function): start at a movie and keep hopping to the
+  // nearest movie not yet visited. See similarity_trail() in db/functions.sql.
+  trail: `SELECT step, id, title, similarity FROM similarity_trail($1, $2)`,
+
+  // ---------- Admin: vector create / read / update / delete ----------
+  // Read: every movie with the state of its vector (pgvector's vector_dims and vector_norm).
+  adminMovies: `
+SELECT d.id, d.title, d.year, d.director, d.description, d.genres, d.rating_count,
+       vector_dims(m.embedding) AS dims,
+       ROUND(vector_norm(m.embedding)::numeric, 3) AS norm
+FROM movie_details d
+JOIN movies m ON m.id = d.id
+ORDER BY d.title`,
+
+  // Create: a stored procedure inserts the movie and links its genres in one call.
+  addMovie: `CALL add_movie($1, $2, $3, $4, $5::text[], $6::vector, NULL)`,
+
+  // Update: text, genres and a freshly computed vector. NULL keeps the old vector, but the
+  // trg_movies_stale_embedding trigger clears it if the text changed.
+  updateMovie: `CALL update_movie($1, $2, $3, $4, $5, $6::text[], $7::vector)`,
+
+  // Update the vector alone (re-embed the current text).
+  updateEmbedding: `UPDATE movies SET embedding = $2::vector WHERE id = $1 RETURNING id`,
+
+  // Delete: removes the row and its vector; ratings and genre links go with it (ON DELETE CASCADE).
+  deleteMovie: `DELETE FROM movies WHERE id = $1 RETURNING id, title`,
+
+  movieText: `SELECT d.title, d.description, d.genres FROM movie_details d WHERE d.id = $1`,
+
+  // Written only by the trg_ratings_audit trigger. LEFT JOINs because the log keeps rows
+  // for users and movies that have since been deleted.
+  auditLog: `
+SELECT a.id, a.action, a.old_rating, a.new_rating, a.db_role, a.changed_at,
+       COALESCE(u.name, '(deleted user #' || a.user_id || ')') AS user_name,
+       COALESCE(m.title, '(deleted movie #' || a.movie_id || ')') AS movie_title,
+       by_u.name AS changed_by_name
+FROM rating_audit a
+LEFT JOIN users  u    ON u.id = a.user_id
+LEFT JOIN movies m    ON m.id = a.movie_id
+LEFT JOIN users  by_u ON by_u.id = a.changed_by
+ORDER BY a.changed_at DESC, a.id DESC
+LIMIT 50`,
 } as const;
