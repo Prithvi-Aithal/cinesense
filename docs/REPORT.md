@@ -138,11 +138,11 @@ erDiagram
 Starting point: a single flat table, which is what a spreadsheet of ratings would look like.
 
 `RATING_SHEET(user_name, movie_title, year, director, description, genres, rating)`, for example
-`("Aarav", "Interstellar", 2014, "Christopher Nolan", "...", "Sci-Fi, Adventure, Drama", 5)`
+`("Aarav", "Ex Machina", 2014, "Alex Garland", "...", "Drama, Sci-Fi, Thriller", 5)` (a real row from the sample data)
 
 | Step | Problem | Fix |
 |---|---|---|
-| **1NF** | `genres` holds a list ("Sci-Fi, Adventure, Drama"), which is not atomic. | One row per (movie, genre) pair, giving MOVIE_GENRES. |
+| **1NF** | `genres` holds a list ("Drama, Sci-Fi, Thriller"), which is not atomic. | One row per (movie, genre) pair, giving MOVIE_GENRES. |
 | **2NF** | With key (user, movie), `director`, `year` and `description` depend on the movie only (a partial dependency), so they repeat for every user who rates the movie. | Move movie attributes into MOVIES(id, title, year, director, description). RATINGS keeps only (user_id, movie_id, rating). |
 | **3NF** | Genre names repeat as text in every tag row, and a typo creates a new "genre". | GENRES(id, name) lookup table, and MOVIE_GENRES stores genre_id. |
 | **BCNF** | Every determinant is a candidate key: `movies.id` and `(title, year)` both determine all movie attributes, and both are keys. | Already satisfied. |

@@ -67,7 +67,7 @@ Browser ──> Next.js pages ──> Next.js API routes ──> PostgreSQL 16 (
    npm install
    npm run seed
    ```
-   The seed drops and recreates the tables, loads 105 movies, 12 genres, 14 users and about 216 ratings, builds the indexes **after** the data is in, then creates the functions, triggers, roles and privileges. Embeddings ship precomputed in `data/embeddings.json`, so seeding needs no model download.
+   The seed drops and recreates the tables, loads 105 movies, 12 genres, 14 users and 216 ratings (18 per sample viewer, generated deterministically from each user's liked and disliked genres in `data/users.json`), builds the indexes **after** the data is in, then creates the functions, triggers, roles and privileges. Embeddings ship precomputed in `data/embeddings.json`, so seeding needs no model download.
 4. **Start.** Run `npm run dev`, open http://localhost:3000 and log in with a demo account.
    The first *Meaning* search, or the first movie an admin adds, downloads the model (~90 MB) into `./.models`; after that it is instant. If the download fails, search falls back to keyword mode and shows a notice, and new movies are saved without a vector until re-embedded.
 
