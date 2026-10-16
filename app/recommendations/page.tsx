@@ -6,6 +6,7 @@ import MovieCard from "@/components/MovieCard";
 import GenrePills from "@/components/GenrePills";
 import QueryPanel from "@/components/QueryPanel";
 import { useUser } from "@/components/UserProvider";
+import RequireRole from "@/components/RequireRole";
 import { api } from "@/lib/api";
 import type { Movie } from "@/lib/types";
 
@@ -17,6 +18,14 @@ type Resp = {
 };
 
 export default function RecommendationsPage() {
+  return (
+    <RequireRole role="viewer">
+      <Recommendations />
+    </RequireRole>
+  );
+}
+
+function Recommendations() {
   const { user } = useUser();
   const router = useRouter();
   const [genre, setGenre] = useState<string | null>(null);
@@ -25,7 +34,7 @@ export default function RecommendationsPage() {
 
   useEffect(() => {
     if (!user) return;
-    const params = new URLSearchParams({ userId: String(user.id) });
+    const params = new URLSearchParams();
     if (genre) params.set("genre", genre);
     api<Resp>(`/api/recommendations?${params}`)
       .then((d) => {

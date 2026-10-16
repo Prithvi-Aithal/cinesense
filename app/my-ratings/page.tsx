@@ -5,40 +5,51 @@ import { useEffect, useState } from "react";
 import StarRating from "@/components/StarRating";
 import QueryPanel from "@/components/QueryPanel";
 import { useUser } from "@/components/UserProvider";
+import RequireRole from "@/components/RequireRole";
 import { api } from "@/lib/api";
 import type { Movie } from "@/lib/types";
 
 export default function MyRatingsPage() {
-  const { user, refreshUsers } = useUser();
+  return (
+    <RequireRole role="viewer">
+      <MyRatings />
+    </RequireRole>
+  );
+}
+
+function MyRatings() {
+  const { user, refreshUser } = useUser();
   const [items, setItems] = useState<Movie[]>([]);
   const [sql, setSql] = useState<string[]>([]);
+  const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     if (!user) return;
-    api<{ items: Movie[]; query: string }>(`/api/users/${user.id}/ratings`).then((d) => {
+    api<{ items: Movie[]; query: string }>("/api/me/ratings").then((d) => {
       setItems(d.items);
       setSql([d.query]);
+      setLoaded(true);
     });
   }, [user]);
 
   async function rate(movieId: number, rating: number) {
     if (!user) return;
     setItems((xs) => xs.map((m) => (m.id === movieId ? { ...m, my_rating: rating } : m)));
-    await api("/api/ratings", { method: "POST", body: JSON.stringify({ userId: user.id, movieId, rating }) });
+    await api("/api/ratings", { method: "POST", body: JSON.stringify({ movieId, rating }) });
   }
 
   async function remove(movieId: number) {
     if (!user) return;
     setItems((xs) => xs.filter((m) => m.id !== movieId));
-    await api("/api/ratings", { method: "DELETE", body: JSON.stringify({ userId: user.id, movieId }) });
-    refreshUsers();
+    await api("/api/ratings", { method: "DELETE", body: JSON.stringify({ movieId }) });
+    refreshUser();
   }
 
   return (
     <div>
       <h1 className="mb-2 mt-4 font-[family-name:var(--font-display)] text-4xl">{user?.name ?? "My"}&apos;s ratings</h1>
       <p className="mb-6 text-muted">
-        {items.length} rated. Change a rating here and For You updates to match. Ratings of 4★ and above pull
+        {loaded ? `${items.length} rated.` : "Loading…"} Change a rating here and For You updates to match. Ratings of 4★ and above pull
         recommendations closer, and 1-2★ push them away.
       </p>
       <div className="overflow-hidden rounded-lg border border-line">
@@ -56,7 +67,7 @@ export default function MyRatingsPage() {
             </button>
           </div>
         ))}
-        {items.length === 0 && (
+        {loaded && items.length === 0 && (
           <p className="bg-panel px-4 py-10 text-center text-muted">
             No ratings yet. <Link href="/" className="text-gold underline">Browse</Link> and rate a few movies.
           </p>

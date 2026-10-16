@@ -1,34 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "./UserProvider";
+import type { Role } from "@/lib/types";
 
-const links = [
+// Which links each role sees. The pages and the API enforce the same rules.
+const links: { href: string; label: string; role?: Role }[] = [
   { href: "/", label: "Browse" },
-  { href: "/recommendations", label: "For You" },
-  { href: "/my-ratings", label: "My Ratings" },
-  { href: "/lab", label: "Query Lab" },
+  { href: "/recommendations", label: "For You", role: "viewer" },
+  { href: "/my-ratings", label: "My Ratings", role: "viewer" },
+  { href: "/admin", label: "Admin", role: "admin" },
+  { href: "/lab", label: "Query Lab", role: "admin" },
 ];
 
 export default function Nav() {
   const pathname = usePathname();
-  const { users, user, setUserId, createUser } = useUser();
-  const [adding, setAdding] = useState(false);
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const router = useRouter();
+  const { user, loading, logout } = useUser();
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    try {
-      await createUser(name.trim());
-      setName("");
-      setAdding(false);
-      setError(null);
-    } catch (err) {
-      setError((err as Error).message);
-    }
+  const visible = links.filter((l) => !l.role || (user && (l.role === "viewer" || user.role === "admin")));
+
+  async function signOut() {
+    await logout();
+    router.push("/");
   }
 
   return (
@@ -39,7 +34,7 @@ export default function Nav() {
           <span className="font-[family-name:var(--font-display)] text-xl tracking-wide text-gold">CineSense</span>
         </Link>
         <nav className="flex flex-wrap gap-1 text-sm">
-          {links.map((l) => {
+          {visible.map((l) => {
             const active = l.href === "/" ? pathname === "/" : pathname.startsWith(l.href);
             return (
               <Link
@@ -52,41 +47,27 @@ export default function Nav() {
             );
           })}
         </nav>
-        <div className="ml-auto flex min-w-0 items-center gap-2 text-sm">
-          {adding ? (
-            <form onSubmit={submit} className="flex items-center gap-2">
-              <input
-                autoFocus
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="New user name"
-                maxLength={60}
-                className="w-36 rounded-md border border-line bg-panel px-2 py-1 outline-none focus:border-gold"
-              />
-              <button className="rounded-md bg-gold px-2 py-1 text-ink" disabled={!name.trim()}>
-                Add
-              </button>
-              <button type="button" onClick={() => { setAdding(false); setError(null); }} className="text-muted">
-                Cancel
-              </button>
-              {error && <span className="text-red">{error}</span>}
-            </form>
-          ) : (
+        <div className="ml-auto flex min-w-0 items-center gap-3 text-sm">
+          {loading ? null : user ? (
             <>
-              <span className="text-muted">Watching as</span>
-              <select
-                value={user?.id ?? ""}
-                onChange={(e) => (e.target.value === "new" ? setAdding(true) : setUserId(Number(e.target.value)))}
-                className="max-w-48 truncate rounded-md border border-line bg-panel px-2 py-1 outline-none focus:border-gold"
+              <span className="min-w-0 truncate" title={user.name}>
+                {user.name}
+              </span>
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  user.role === "admin" ? "bg-gold text-ink" : "border border-line text-muted"
+                }`}
               >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.rating_count})
-                  </option>
-                ))}
-                <option value="new">+ New user…</option>
-              </select>
+                {user.role}
+              </span>
+              <button onClick={signOut} className="text-muted underline-offset-2 hover:text-text hover:underline">
+                Log out
+              </button>
             </>
+          ) : (
+            <Link href={`/login?next=${encodeURIComponent(pathname)}`} className="rounded-md bg-gold px-3 py-1.5 text-ink">
+              Log in
+            </Link>
           )}
         </div>
       </div>

@@ -15,7 +15,8 @@ type Resp = { mode: Mode; items: Movie[]; query: string; warning?: string };
 const EXAMPLES = ["astronauts stranded far from home", "a heist that goes wrong", "falling in love across time", "a family haunted by grief"];
 
 export default function BrowsePage() {
-  const { user } = useUser();
+  const { user, loading: userLoading } = useUser();
+  const userId = user?.id ?? null;
   const [q, setQ] = useState("");
   const [debounced, setDebounced] = useState("");
   const [mode, setMode] = useState<Mode>("keyword");
@@ -34,8 +35,8 @@ export default function BrowsePage() {
   }, [q]);
 
   useEffect(() => {
-    if (!user) return;
-    const params = new URLSearchParams({ mode, userId: String(user.id) });
+    if (userLoading) return;
+    const params = new URLSearchParams({ mode });
     if (debounced) params.set("q", debounced);
     if (genre) params.set("genre", genre);
     let cancelled = false;
@@ -54,11 +55,11 @@ export default function BrowsePage() {
     return () => {
       cancelled = true;
     };
-  }, [debounced, mode, genre, user]);
+  }, [debounced, mode, genre, userId, userLoading]);
 
-  const requestKey = user
-    ? new URLSearchParams({ mode, userId: String(user.id), ...(debounced ? { q: debounced } : {}), ...(genre ? { genre } : {}) }).toString()
-    : null;
+  const requestKey = userLoading
+    ? null
+    : new URLSearchParams({ mode, ...(debounced ? { q: debounced } : {}), ...(genre ? { genre } : {}) }).toString();
   const loading = requestKey !== loadedKey;
 
   return (
