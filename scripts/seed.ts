@@ -100,7 +100,7 @@ async function main() {
       }
     }
 
-    // Users + ratings generated from each user's taste (likes rate high, dislikes rate low).
+    // Users + ratings generated from each user's taste (liked genres rate high, disliked genres rate low).
     let ratingCount = 0;
     for (let u = 0; u < users.length; u++) {
       const spec = users[u];
@@ -111,10 +111,26 @@ async function main() {
       );
       if (spec.likes.length === 0) continue; // the cold-start demo user has no ratings
       const rand = rng(1000 + u * 7919);
-      const liked = movies.map((m, i) => i).filter((i) => movies[i].genres.some((g) => spec.likes.includes(g)));
-      const others = movies.map((m, i) => i).filter((i) => !liked.includes(i));
-      const pick = (arr: number[], n: number) => [...arr].sort(() => rand() - 0.5).slice(0, n);
-      const chosen = [...pick(liked, 12), ...pick(others, 6)];
+      const shuffle = (arr: number[]) => {
+        const a = [...arr];
+        for (let i = a.length - 1; i > 0; i--) {
+          const j = Math.floor(rand() * (i + 1));
+          [a[i], a[j]] = [a[j], a[i]];
+        }
+        return a;
+      };
+      const all = movies.map((_, i) => i);
+      const likeCount = (i: number) => movies[i].genres.filter((g) => spec.likes.includes(g)).length;
+      const isDisliked = (i: number) => movies[i].genres.some((g) => spec.dislikes.includes(g));
+      // 12 favourites: films with none of the disliked genres, preferring those that match the most
+      // liked genres (a Sci-Fi + Action fan's favourites are Sci-Fi action films, not just any thriller).
+      const favourites = shuffle(all.filter((i) => likeCount(i) > 0 && !isDisliked(i)))
+        .sort((a, b) => likeCount(b) - likeCount(a))
+        .slice(0, 12);
+      // 3 films in a disliked genre (rated low, so they push the taste vector away) and 3 neutral ones.
+      const disliked = shuffle(all.filter((i) => isDisliked(i) && likeCount(i) === 0)).slice(0, 3);
+      const neutral = shuffle(all.filter((i) => likeCount(i) === 0 && !isDisliked(i))).slice(0, 3);
+      const chosen = [...favourites, ...disliked, ...neutral];
       for (const i of chosen) {
         const g = movies[i].genres;
         let score = 3 + (rand() - 0.5) * 1.6;
