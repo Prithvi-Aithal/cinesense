@@ -73,6 +73,11 @@ Browser ──> Next.js pages ──> Next.js API routes ──> PostgreSQL 16 (
 
 Adding a movie: use **Admin → Add movie**, or append it to `data/movies.json` and run `npm run seed` (only new or changed movies are re-embedded).
 
+**Troubleshooting**
+- *`password authentication failed for user "cinesense_app"`*: run `npm run seed` once; it creates that role with the password from `DATABASE_URL`.
+- *A page keeps reloading in `npm run dev`*: the dev build cache is out of date. Stop the server, delete the `.next` folder and start it again.
+- *`ECONNREFUSED 127.0.0.1:5432`*: the database isn't running. Start Docker Desktop (the `cinesense-db` container starts with it) or your local Postgres.
+
 ## Project layout
 
 ```
