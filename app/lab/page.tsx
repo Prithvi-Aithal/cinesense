@@ -2,14 +2,32 @@
 
 import { useEffect, useState } from "react";
 import { api } from "@/lib/api";
-
-type LabQuery = { id: string; title: string; kind: "SQL" | "Vector" | "Hybrid"; explain: string; sql: string; params: unknown[] };
+import RequireRole from "@/components/RequireRole";
+import type { LabKind, LabQuery } from "@/lib/lab";
 type Stat = { name: string; type: string; on_table: string; method: string; rows: number | null; size: string };
 type Result = { rows: Record<string, unknown>[]; plan: string };
 
-const kindColor = { SQL: "border-sky-400/50 text-sky-300", Vector: "border-gold/60 text-gold", Hybrid: "border-fuchsia-400/50 text-fuchsia-300" };
+const kindColor: Record<LabKind, string> = {
+  SQL: "border-sky-400/50 text-sky-300",
+  Join: "border-sky-400/50 text-sky-300",
+  Correlated: "border-teal-400/50 text-teal-300",
+  Recursive: "border-teal-400/50 text-teal-300",
+  Function: "border-emerald-400/50 text-emerald-300",
+  Trigger: "border-emerald-400/50 text-emerald-300",
+  RBAC: "border-rose-400/50 text-rose-300",
+  Vector: "border-gold/60 text-gold",
+  Hybrid: "border-fuchsia-400/50 text-fuchsia-300",
+};
 
 export default function LabPage() {
+  return (
+    <RequireRole role="admin">
+      <Lab />
+    </RequireRole>
+  );
+}
+
+function Lab() {
   const [queries, setQueries] = useState<LabQuery[]>([]);
   const [stats, setStats] = useState<Stat[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -47,7 +65,8 @@ export default function LabPage() {
       <h1 className="mt-4 font-[family-name:var(--font-display)] text-4xl">Query Lab</h1>
       <p className="mt-2 max-w-3xl text-muted">
         The key queries behind CineSense, with their real results and <code className="text-gold">EXPLAIN ANALYZE</code>{" "}
-        plans from PostgreSQL. Each runs in a read-only transaction.
+        plans from PostgreSQL: joins, nested, correlated and recursive queries, stored functions, the trigger-written
+        audit log, the role privileges, and the vector search. Each runs in a read-only transaction as the admin role.
       </p>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[280px_1fr]">
@@ -80,7 +99,9 @@ export default function LabPage() {
             <h2 className="font-[family-name:var(--font-display)] text-2xl">{q.title}</h2>
             <p className="mt-1 text-sm text-muted">{q.explain}</p>
             <pre className="sql-block mt-4 rounded-lg border border-line bg-panel p-4">{q.sql}</pre>
-            <p className="mt-1 text-xs text-muted">Parameters: {q.params.map((p) => JSON.stringify(p)).join(", ")}</p>
+            {q.params.length > 0 && (
+              <p className="mt-1 text-xs text-muted">Parameters: {q.params.map((p) => JSON.stringify(p)).join(", ")}</p>
+            )}
 
             {error && <p className="mt-4 text-red">{error}</p>}
             {result && (
