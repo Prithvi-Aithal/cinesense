@@ -1,15 +1,21 @@
 -- CineSense schema: relational tables (SQL) + one vector column (pgvector).
--- Run order: schema.sql -> load data -> indexes.sql (vector index is built AFTER the data is loaded).
+-- Run order: schema.sql -> load data -> indexes.sql -> functions.sql -> security.sql
+-- (the vector index is built AFTER the data is loaded, and triggers start after the seed data is in).
 
-CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector;     -- vector type, <=> distance operator, HNSW index
+CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- bcrypt password hashing and session tokens
 
 DROP VIEW  IF EXISTS movie_details;
-DROP TABLE IF EXISTS ratings, movie_genres, movies, genres, users CASCADE;
+DROP TABLE IF EXISTS rating_audit, sessions, ratings, movie_genres, movies, genres, users CASCADE;
 
+-- Accounts. role drives both the UI and the database role the app switches to (see security.sql).
+-- password_hash is a bcrypt hash made by pgcrypto inside the database; no role can read it directly.
 CREATE TABLE users (
-  id          SERIAL PRIMARY KEY,
-  name        VARCHAR(60) NOT NULL UNIQUE,
-  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+  id             SERIAL PRIMARY KEY,
+  name           VARCHAR(60) NOT NULL UNIQUE,
+  password_hash  TEXT NOT NULL,
+  role           VARCHAR(10) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'viewer')),
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE genres (
@@ -42,6 +48,29 @@ CREATE TABLE ratings (
   rating      SMALLINT NOT NULL CHECK (rating BETWEEN 1 AND 5),
   rated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, movie_id)
+);
+
+-- Login sessions. Only a SHA-256 hash of the cookie token is stored, so a leaked table can't be replayed.
+CREATE TABLE sessions (
+  token_hash  TEXT PRIMARY KEY,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at  TIMESTAMPTZ NOT NULL,
+  CHECK (expires_at > created_at)
+);
+
+-- History of every rating change, written only by the trg_ratings_audit trigger.
+-- No foreign keys on purpose: the log must survive the user or movie being deleted.
+CREATE TABLE rating_audit (
+  id          BIGSERIAL PRIMARY KEY,
+  action      VARCHAR(6) NOT NULL CHECK (action IN ('INSERT', 'UPDATE', 'DELETE')),
+  user_id     INT NOT NULL,
+  movie_id    INT NOT NULL,
+  old_rating  SMALLINT,
+  new_rating  SMALLINT,
+  changed_by  INT,                      -- the signed-in user who made the change
+  db_role     TEXT NOT NULL,            -- the database role the change ran under
+  changed_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- Read model used by the UI: one row per movie with its genres and rating stats.
