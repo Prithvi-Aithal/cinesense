@@ -1,5 +1,6 @@
-// Seeds the database: schema -> genres, movies (+ embeddings) -> users, ratings -> indexes.
-// Run with `npm run seed` (reads DATABASE_URL from .env.local).
+// Seeds the database: schema -> genres, movies (+ embeddings) -> users, ratings -> indexes
+// -> functions and triggers -> roles and privileges.
+// Run with `npm run seed` (reads DATABASE_OWNER_URL and DATABASE_URL from .env.local).
 //
 // Embeddings are cached in data/embeddings.json, keyed by the exact text that was embedded,
 // so re-seeding is instant and works offline. Add or edit a movie in data/movies.json and
@@ -7,12 +8,19 @@
 import fs from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { pool } from "../lib/db";
+import { Pool } from "pg";
 import { embed, movieText, MODEL_ID, EMBEDDING_DIMS } from "../lib/embeddings";
 import { toPgVector } from "../lib/vector";
 
 type Movie = { title: string; year: number; director: string; genres: string[]; description: string };
-type UserSpec = { name: string; likes: string[]; dislikes: string[] };
+type UserSpec = { name: string; role?: "admin" | "viewer"; likes: string[]; dislikes: string[] };
+
+// Demo passwords, listed in the README. Hashed with bcrypt inside the database.
+const DEMO_PASSWORD = { admin: "admin123", viewer: "viewer123" } as const;
+
+// Creating roles, functions and policies needs the database owner, not the app's restricted login.
+const ownerUrl = process.env.DATABASE_OWNER_URL ?? process.env.DATABASE_URL;
+const pool = new Pool({ connectionString: ownerUrl });
 type Cache = { model: string; dims: number; vectors: Record<string, { hash: string; v: number[] }> };
 
 const root = path.join(__dirname, "..");
@@ -51,6 +59,17 @@ async function loadEmbeddings(): Promise<number[][]> {
   return keys.map((k) => cache.vectors[k].v);
 }
 
+// Give the cinesense_app login role the password from DATABASE_URL, so the two can't drift apart.
+async function setAppPassword(client: import("pg").PoolClient) {
+  const appUrl = process.env.DATABASE_URL ? new URL(process.env.DATABASE_URL) : null;
+  if (appUrl?.username !== "cinesense_app") {
+    console.warn("DATABASE_URL does not use cinesense_app, so the app will not run under the restricted role.");
+    return;
+  }
+  const password = decodeURIComponent(appUrl.password);
+  await client.query(`ALTER ROLE cinesense_app PASSWORD ${client.escapeLiteral(password)}`);
+}
+
 async function main() {
   const vectors = await loadEmbeddings();
   const client = await pool.connect();
@@ -85,7 +104,11 @@ async function main() {
     let ratingCount = 0;
     for (let u = 0; u < users.length; u++) {
       const spec = users[u];
-      const { rows } = await client.query("INSERT INTO users (name) VALUES ($1) RETURNING id", [spec.name]);
+      const role = spec.role ?? "viewer";
+      const { rows } = await client.query(
+        "INSERT INTO users (name, password_hash, role) VALUES ($1, crypt($2, gen_salt('bf', 8)), $3) RETURNING id",
+        [spec.name, DEMO_PASSWORD[role], role]
+      );
       if (spec.likes.length === 0) continue; // the cold-start demo user has no ratings
       const rand = rng(1000 + u * 7919);
       const liked = movies.map((m, i) => i).filter((i) => movies[i].genres.some((g) => spec.likes.includes(g)));
@@ -104,8 +127,12 @@ async function main() {
     }
 
     await client.query(read("db/indexes.sql"));
+    await client.query(read("db/functions.sql"));   // triggers start now, so the seed data isn't in the audit log
+    await client.query(read("db/security.sql"));
+    await setAppPassword(client);
     await client.query("COMMIT");
     console.log(`Seeded ${genreNames.length} genres, ${movies.length} movies, ${users.length} users, ${ratingCount} ratings.`);
+    console.log("Created roles cinesense_anon, cinesense_viewer, cinesense_admin and login role cinesense_app.");
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;

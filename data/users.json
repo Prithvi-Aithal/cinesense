@@ -11,5 +11,6 @@
   { "name": "Sara",   "likes": ["Drama", "Comedy"],        "dislikes": ["Sci-Fi"] },
   { "name": "Neel",   "likes": ["Sci-Fi", "Action"],       "dislikes": ["Drama"] },
   { "name": "Tara",   "likes": ["Horror", "Thriller"],     "dislikes": ["Comedy"] },
-  { "name": "New Viewer", "likes": [], "dislikes": [] }
+  { "name": "New Viewer", "likes": [], "dislikes": [] },
+  { "name": "admin", "role": "admin", "likes": [], "dislikes": [] }
 ]
