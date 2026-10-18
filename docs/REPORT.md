@@ -48,6 +48,14 @@ Browser ──> Next.js pages (React) ──> Next.js API routes ─────
 
 ## 3. ER diagram
 
+**Chen notation** (entities as rectangles, relationships as diamonds, attributes as ovals, key attributes underlined, derived attributes dashed, total participation as a double line):
+
+![ER diagram, Chen notation](er-diagram-chen.png)
+
+The M:N relationships RATES and CLASSIFIED_AS become the `ratings` and `movie_genres` tables, with RATES carrying the `rating` and `rated_at` attributes. The 1:N relationship HAS becomes the `sessions.user_id` foreign key, and every session must belong to a user (total participation). `avg_rating` and `rating_count` are derived in the `movie_details` view rather than stored. The SVG source is [`er-diagram-chen.svg`](er-diagram-chen.svg).
+
+**Relational (crow's-foot) view** of the same schema, as implemented in `db/schema.sql`:
+
 ```mermaid
 erDiagram
     GENRES ||--o{ MOVIE_GENRES : classifies

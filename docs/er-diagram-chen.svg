@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2060" height="1180" viewBox="0 0 2060 1180">
+<style>
+  text { font-family: "Segoe UI", Arial, sans-serif; text-anchor: middle; fill: #1d1d1f; }
+  .ln { stroke: #333; stroke-width: 1.6; }
+  .ent { fill: #e8f0fe; stroke: #1a56b0; stroke-width: 2; }
+  .rel { fill: #fff4dc; stroke: #b7791f; stroke-width: 2; }
+  .attr { fill: #ffffff; stroke: #4a4a4a; stroke-width: 1.4; }
+  .attrD { fill: #ffffff; stroke: #4a4a4a; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  .entT { font-size: 20px; font-weight: 700; }
+  .relT { font-size: 15px; font-weight: 700; }
+  .attrT { font-size: 14px; }
+  .key { text-decoration: underline; font-weight: 700; }
+  .card { font-size: 20px; font-weight: 700; fill: #b42318; text-anchor: start; }
+  .note { font-size: 13px; font-style: italic; fill: #555; }
+  .legend { fill: #fafafa; stroke: #bbb; }
+  .legT { font-size: 17px; font-weight: 700; text-anchor: start; }
+  .legI { font-size: 14px; text-anchor: start; }
+  .title { font-size: 28px; font-weight: 700; text-anchor: start; }
+  .sub { font-size: 15px; fill: #555; text-anchor: start; }
+</style>
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="40" y="60" class="title">CineSense: ER diagram (Chen notation)</text>
+<text x="40" y="88" class="sub">PostgreSQL 16 + pgvector. M:N relationships become the ratings and movie_genres tables; 1:N HAS becomes sessions.user_id.</text>
+<line x1="400" y1="480" x2="760" y2="480" class="ln"/>
+<line x1="760" y1="480" x2="1120" y2="480" class="ln"/>
+<line x1="1120" y1="480" x2="1120" y2="765" class="ln"/>
+<line x1="1120" y1="765" x2="1120" y2="960" class="ln"/>
+<line x1="400" y1="480" x2="400" y2="730" class="ln"/>
+<line x1="396" y1="730" x2="396" y2="960" class="ln"/>
+<line x1="404" y1="730" x2="404" y2="960" class="ln"/>
+<line x1="400" y1="480" x2="205" y2="390" class="ln"/>
+<line x1="400" y1="480" x2="255" y2="300" class="ln"/>
+<line x1="400" y1="480" x2="400" y2="270" class="ln"/>
+<line x1="400" y1="480" x2="560" y2="300" class="ln"/>
+<line x1="400" y1="480" x2="190" y2="580" class="ln"/>
+<line x1="760" y1="480" x2="680" y2="330" class="ln"/>
+<line x1="760" y1="480" x2="845" y2="330" class="ln"/>
+<line x1="1120" y1="480" x2="990" y2="330" class="ln"/>
+<line x1="1120" y1="480" x2="1110" y2="280" class="ln"/>
+<line x1="1120" y1="480" x2="1245" y2="320" class="ln"/>
+<line x1="1120" y1="480" x2="1345" y2="455" class="ln"/>
+<line x1="1120" y1="480" x2="1355" y2="540" class="ln"/>
+<line x1="1120" y1="480" x2="1320" y2="640" class="ln"/>
+<line x1="1120" y1="480" x2="895" y2="600" class="ln"/>
+<line x1="1120" y1="480" x2="975" y2="660" class="ln"/>
+<line x1="1120" y1="960" x2="975" y2="1080" class="ln"/>
+<line x1="1120" y1="960" x2="1265" y2="1080" class="ln"/>
+<line x1="400" y1="960" x2="215" y2="1070" class="ln"/>
+<line x1="400" y1="960" x2="400" y2="1105" class="ln"/>
+<line x1="400" y1="960" x2="590" y2="1070" class="ln"/>
+<line x1="1790" y1="390" x2="1790" y2="170" class="ln"/>
+<line x1="1790" y1="390" x2="1950" y2="225" class="ln"/>
+<line x1="1790" y1="390" x2="1985" y2="335" class="ln"/>
+<line x1="1790" y1="390" x2="1975" y2="460" class="ln"/>
+<line x1="1790" y1="390" x2="1900" y2="585" class="ln"/>
+<line x1="1790" y1="390" x2="1700" y2="595" class="ln"/>
+<line x1="1790" y1="390" x2="1590" y2="470" class="ln"/>
+<line x1="1790" y1="390" x2="1580" y2="320" class="ln"/>
+<line x1="1790" y1="390" x2="1625" y2="205" class="ln"/>
+<rect x="315" y="449" width="170" height="62" class="ent"/>
+<text x="400" y="487" class="entT">USER</text>
+<rect x="1035" y="449" width="170" height="62" class="ent"/>
+<text x="1120" y="487" class="entT">MOVIE</text>
+<rect x="1035" y="929" width="170" height="62" class="ent"/>
+<text x="1120" y="967" class="entT">GENRE</text>
+<rect x="315" y="929" width="170" height="62" class="ent"/>
+<text x="400" y="967" class="entT">SESSION</text>
+<rect x="1690" y="359" width="200" height="62" class="ent"/>
+<text x="1790" y="397" class="entT">RATING_AUDIT</text>
+<polygon points="665,480 760,428 855,480 760,532" class="rel"/>
+<text x="760" y="486" class="relT">RATES</text>
+<polygon points="1005,765 1120,710 1235,765 1120,820" class="rel"/>
+<text x="1120" y="771" class="relT">CLASSIFIED_AS</text>
+<polygon points="305,730 400,678 495,730 400,782" class="rel"/>
+<text x="400" y="736" class="relT">HAS</text>
+<text x="512" y="468" class="card">M</text>
+<text x="1012" y="468" class="card">N</text>
+<text x="1136" y="548" class="card">M</text>
+<text x="1136" y="918" class="card">N</text>
+<text x="416" y="548" class="card">1</text>
+<text x="416" y="918" class="card">N</text>
+<ellipse cx="205" cy="390" rx="52" ry="25" class="attr"/>
+<text x="205" y="395" class="attrT key">id</text>
+<ellipse cx="255" cy="300" rx="52" ry="25" class="attr"/>
+<text x="255" y="305" class="attrT">name</text>
+<ellipse cx="400" cy="270" rx="105.2" ry="25" class="attr"/>
+<text x="400" y="275" class="attrT">password_hash</text>
+<ellipse cx="560" cy="300" rx="52" ry="25" class="attr"/>
+<text x="560" y="305" class="attrT">role</text>
+<ellipse cx="190" cy="580" rx="86" ry="25" class="attr"/>
+<text x="190" y="585" class="attrT">created_at</text>
+<ellipse cx="680" cy="330" rx="60.400000000000006" ry="25" class="attr"/>
+<text x="680" y="335" class="attrT">rating</text>
+<ellipse cx="845" cy="330" rx="73.2" ry="25" class="attr"/>
+<text x="845" y="335" class="attrT">rated_at</text>
+<ellipse cx="990" cy="330" rx="52" ry="25" class="attr"/>
+<text x="990" y="335" class="attrT key">id</text>
+<ellipse cx="1110" cy="280" rx="54" ry="25" class="attr"/>
+<text x="1110" y="285" class="attrT">title</text>
+<ellipse cx="1245" cy="320" rx="52" ry="25" class="attr"/>
+<text x="1245" y="325" class="attrT">year</text>
+<ellipse cx="1345" cy="455" rx="73.2" ry="25" class="attr"/>
+<text x="1345" y="460" class="attrT">director</text>
+<ellipse cx="1355" cy="540" rx="92.4" ry="25" class="attr"/>
+<text x="1355" y="545" class="attrT">description</text>
+<ellipse cx="1320" cy="640" rx="162.8" ry="25" class="attr"/>
+<text x="1320" y="645" class="attrT">embedding  vector(384)</text>
+<ellipse cx="895" cy="600" rx="86" ry="25" class="attrD"/>
+<text x="895" y="605" class="attrT">avg_rating</text>
+<ellipse cx="975" cy="660" rx="98.80000000000001" ry="25" class="attrD"/>
+<text x="975" y="665" class="attrT">rating_count</text>
+<ellipse cx="975" cy="1080" rx="52" ry="25" class="attr"/>
+<text x="975" y="1085" class="attrT key">id</text>
+<ellipse cx="1265" cy="1080" rx="52" ry="25" class="attr"/>
+<text x="1265" y="1085" class="attrT">name</text>
+<ellipse cx="215" cy="1070" rx="86" ry="25" class="attr"/>
+<text x="215" y="1075" class="attrT key">token_hash</text>
+<ellipse cx="400" cy="1105" rx="86" ry="25" class="attr"/>
+<text x="400" y="1110" class="attrT">created_at</text>
+<ellipse cx="590" cy="1070" rx="86" ry="25" class="attr"/>
+<text x="590" y="1075" class="attrT">expires_at</text>
+<ellipse cx="1790" cy="170" rx="52" ry="25" class="attr"/>
+<text x="1790" y="175" class="attrT key">id</text>
+<ellipse cx="1950" cy="225" rx="60.400000000000006" ry="25" class="attr"/>
+<text x="1950" y="230" class="attrT">action</text>
+<ellipse cx="1985" cy="335" rx="66.80000000000001" ry="25" class="attr"/>
+<text x="1985" y="340" class="attrT">user_id</text>
+<ellipse cx="1975" cy="460" rx="73.2" ry="25" class="attr"/>
+<text x="1975" y="465" class="attrT">movie_id</text>
+<ellipse cx="1900" cy="585" rx="86" ry="25" class="attr"/>
+<text x="1900" y="590" class="attrT">old_rating</text>
+<ellipse cx="1700" cy="595" rx="86" ry="25" class="attr"/>
+<text x="1700" y="600" class="attrT">new_rating</text>
+<ellipse cx="1590" cy="470" rx="86" ry="25" class="attr"/>
+<text x="1590" y="475" class="attrT">changed_by</text>
+<ellipse cx="1580" cy="320" rx="66.80000000000001" ry="25" class="attr"/>
+<text x="1580" y="325" class="attrT">db_role</text>
+<ellipse cx="1625" cy="205" rx="86" ry="25" class="attr"/>
+<text x="1625" y="210" class="attrT">changed_at</text>
+<text x="1790" y="665" class="note">Written only by trigger trg_ratings_audit on RATINGS.</text>
+<text x="1790" y="685" class="note">No foreign keys, so the history survives deletes.</text>
+<rect x="1640" y="830" width="370" height="310" rx="8" class="legend"/>
+<text x="1660" y="862" class="legT">Legend</text>
+<rect x="1660" y="885" width="60" height="30" class="ent"/><text x="1740" y="905" class="legI">Entity</text>
+<polygon points="1660,940 1690,924 1720,940 1690,956" class="rel"/><text x="1740" y="945" class="legI">Relationship</text>
+<ellipse cx="1690" cy="980" rx="30" ry="14" class="attr"/><text x="1740" y="985" class="legI">Attribute</text>
+<ellipse cx="1690" cy="1020" rx="30" ry="14" class="attr"/><text x="1690" y="1024" class="attrT key" style="font-size:11px">id</text><text x="1740" y="1025" class="legI">Key attribute (underlined)</text>
+<ellipse cx="1690" cy="1060" rx="30" ry="14" class="attrD"/><text x="1740" y="1065" class="legI">Derived attribute (movie_details view)</text>
+<line x1="1660" y1="1097" x2="1720" y2="1097" class="ln"/><line x1="1660" y1="1103" x2="1720" y2="1103" class="ln"/><text x="1740" y="1105" class="legI">Total participation</text>
+</svg>
