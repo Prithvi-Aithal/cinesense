@@ -56,7 +56,7 @@ Browser ──> Next.js pages ──> Next.js API routes ──> PostgreSQL 16 (
 
 1. **Postgres 16 + pgvector 0.8+.** The simplest way is Docker:
    ```bash
-   docker run -d --name cinesense-db -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=moviedb -p 5432:5432 pgvector/pgvector:pg16
+   docker run -d --name cinesense-db --restart always -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=moviedb -p 5432:5432 pgvector/pgvector:pg16
    ```
    Or install both yourself and run `createdb moviedb`.
 2. **Configure.** Copy `.env.example` to `.env.local`. It holds two connection strings:
@@ -77,6 +77,16 @@ Adding a movie: use **Admin → Add movie**, or append it to `data/movies.json` 
 - *`password authentication failed for user "cinesense_app"`*: run `npm run seed` once; it creates that role with the password from `DATABASE_URL`.
 - *A page keeps reloading in `npm run dev`*: the dev build cache is out of date. Stop the server, delete the `.next` folder and start it again.
 - *`ECONNREFUSED 127.0.0.1:5432`*: the database isn't running. Start Docker Desktop (the `cinesense-db` container starts with it) or your local Postgres.
+
+## Demo materials
+
+| File | Purpose |
+|---|---|
+| `start-cinesense.bat` | Windows: starts Docker, the `cinesense-db` container and the app |
+| `DEMO_COMMANDS.txt` | every demo command for psql, section by section: tables, constraints, CRUD, triggers with before/after, functions and procedures, advanced queries, vector CRUD, security, and ready answers for live modifications |
+| `DML_COMMANDS.txt` | only the INSERT / UPDATE / DELETE commands, plus queries proving a UI action reached the database |
+| `DEMO_EXPLANATION.md` (and `.pdf`) | what to say for each part of the demo |
+| `DEMO_HANDOUT.pdf` | printable: problem statement, ER diagram, relational schema, entity and attribute analysis, UI ↔ table map |
 
 ## Project layout
 

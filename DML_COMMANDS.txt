@@ -1,0 +1,155 @@
+-- =====================================================================================
+--  CINESENSE - DML COMMANDS ONLY (INSERT, SELECT, UPDATE, DELETE)
+--  File: DML_COMMANDS.txt      (all other demo commands: DEMO_COMMANDS.txt)
+--
+--  Open psql first:   docker exec -it cinesense-db psql -U postgres -d moviedb
+--  Run the sections in order (copy from Notepad, paste into psql). They only touch demo
+--  rows ("Demo User", "Demo Film", "Documentary"); section 6 removes them again.
+--  Lines marked "-- fails" break a constraint ON PURPOSE.
+--  Section 5 = proof that an action done in the UI reached the database.
+-- =====================================================================================
+
+
+-- =====================================================================================
+-- 1. CREATE (INSERT)
+-- =====================================================================================
+
+-- 1.1 New user through the stored function (the password is bcrypt-hashed inside the database)
+SELECT register_user('Demo User', 'demo123') AS new_user_id;
+
+-- 1.2 Plain INSERT into a lookup table
+INSERT INTO genres (name) VALUES ('Documentary') RETURNING id, name;
+
+-- 1.3 INSERT ... SELECT: a new movie, with a vector copied from WALL-E
+--     (the app computes a real embedding from the description; SQL alone can't run the model)
+INSERT INTO movies (title, year, director, description, embedding)
+SELECT 'Demo Film', 2025, 'Demo Director',
+       'A lonely robot on an abandoned planet falls in love while cleaning up the trash.', embedding
+FROM movies WHERE title = 'WALL-E'
+RETURNING id, title, year, vector_dims(embedding) AS vector_dims;
+
+-- 1.4 Link the movie to two genres (many-to-many table)
+INSERT INTO movie_genres (movie_id, genre_id)
+SELECT m.id, g.id FROM movies m, genres g
+WHERE m.title = 'Demo Film' AND g.name IN ('Sci-Fi', 'Documentary');
+
+-- 1.5 Ratings by the new user (composite primary key: one rating per user per movie)
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 5 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Demo Film';
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 3 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Interstellar';
+
+-- 1.6 Constraints in action (each should fail)
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 6 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Titanic';     -- CHECK: rating 1-5
+INSERT INTO ratings (user_id, movie_id, rating) VALUES (99999, 1, 4);                               -- FOREIGN KEY: no such user
+INSERT INTO genres (name) VALUES ('Documentary');                                                   -- UNIQUE: genre exists
+
+
+-- =====================================================================================
+-- 2. READ (SELECT)
+-- =====================================================================================
+
+SELECT id, name, role, created_at FROM users WHERE name = 'Demo User';
+SELECT id, title, genres, avg_rating, rating_count FROM movie_details WHERE title = 'Demo Film';
+SELECT u.name, m.title, r.rating, r.rated_at
+FROM ratings r JOIN users u ON u.id = r.user_id JOIN movies m ON m.id = r.movie_id
+WHERE u.name = 'Demo User' ORDER BY m.title;
+SELECT action, old_rating, new_rating, db_role FROM rating_audit
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User') ORDER BY id;     -- written by the audit trigger
+
+
+-- =====================================================================================
+-- 3. UPDATE
+-- =====================================================================================
+
+-- 3.1 Upsert: inserting a rating that already exists updates it instead (ON CONFLICT)
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 4 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Interstellar'
+ON CONFLICT (user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+RETURNING user_id, movie_id, rating, rated_at;
+
+-- 3.2 Plain UPDATE of a rating
+UPDATE ratings SET rating = 2
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User')
+  AND movie_id = (SELECT id FROM movies WHERE title = 'Interstellar')
+RETURNING user_id, movie_id, rating;
+
+-- 3.3 UPDATE a movie's details
+UPDATE movies SET director = 'Updated Director', year = 2024 WHERE title = 'Demo Film'
+RETURNING id, title, year, director;
+
+-- 3.4 UPDATE a vector (what "Re-embed" does): give Demo Film a space-survival vector, then check its neighbours
+SELECT title FROM movies WHERE title <> 'Demo Film'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Film') LIMIT 3;      -- BEFORE: robot films
+UPDATE movies SET embedding = (SELECT embedding FROM movies WHERE title = 'The Martian') WHERE title = 'Demo Film';
+SELECT title FROM movies WHERE title NOT IN ('Demo Film', 'The Martian')
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Film') LIMIT 3;      -- AFTER: space films
+
+-- 3.5 UPDATE a user's role
+UPDATE users SET role = 'admin' WHERE name = 'Demo User' RETURNING id, name, role;
+UPDATE users SET role = 'viewer' WHERE name = 'Demo User' RETURNING id, name, role;
+UPDATE users SET role = 'superuser' WHERE name = 'Demo User';                                -- CHECK: fails
+
+
+-- =====================================================================================
+-- 4. DELETE
+-- =====================================================================================
+
+-- 4.1 Delete one rating (the audit trigger logs it)
+DELETE FROM ratings
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User')
+  AND movie_id = (SELECT id FROM movies WHERE title = 'Interstellar')
+RETURNING user_id, movie_id, rating;
+
+-- 4.2 Delete a movie: ON DELETE CASCADE removes its genre links and ratings, and the vector goes with the row
+SELECT (SELECT count(*) FROM movie_genres WHERE movie_id = m.id) AS genre_links,
+       (SELECT count(*) FROM ratings WHERE movie_id = m.id)      AS ratings
+FROM movies m WHERE m.title = 'Demo Film';                                                    -- BEFORE: 2 links, 1 rating
+DELETE FROM movies WHERE title = 'Demo Film' RETURNING id, title;
+SELECT count(*) AS demo_film_rows FROM movies WHERE title = 'Demo Film';                      -- AFTER: 0
+
+-- 4.3 Delete a genre and a user (the user's ratings and sessions cascade)
+DELETE FROM genres WHERE name = 'Documentary' RETURNING id, name;
+DELETE FROM users WHERE name = 'Demo User' RETURNING id, name;
+
+-- 4.4 The full history survives in the audit log (no foreign keys on purpose)
+SELECT id, action, user_id, movie_id, old_rating, new_rating FROM rating_audit ORDER BY id DESC LIMIT 6;
+
+
+-- =====================================================================================
+-- 5. CRUD FROM THE UI: proof that each action reached the database
+-- Do the action in the browser, then run the query below it in psql.
+-- =====================================================================================
+
+-- Sign up (Log in -> Sign up) -> the new row in users, with a bcrypt hash
+SELECT id, name, role, left(password_hash, 7) || '…' AS hash_start, created_at FROM users ORDER BY id DESC LIMIT 1;
+
+-- Rate / re-rate / remove a movie as Aarav (Browse stars, or My Ratings) -> ratings and the audit log
+SELECT m.title, r.rating, r.rated_at
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') ORDER BY r.rated_at DESC LIMIT 3;
+SELECT a.action, m.title, a.old_rating, a.new_rating, a.db_role, a.changed_at
+FROM rating_audit a LEFT JOIN movies m ON m.id = a.movie_id ORDER BY a.id DESC LIMIT 5;
+
+-- Admin -> Add movie -> the newest movie, its genres and its 384-dim vector
+SELECT m.id, m.title, d.genres, vector_dims(m.embedding) AS dims, (m.embedding::real[])[1:3] AS first_values
+FROM movies m JOIN movie_details d ON d.id = m.id ORDER BY m.id DESC LIMIT 1;
+
+-- Admin -> Edit (Save and re-embed) -> run the query above again: description and first_values change
+SELECT title, description, (embedding::real[])[1:3] AS first_values FROM movies ORDER BY id DESC LIMIT 1;
+
+-- Admin -> Delete movie -> the row is gone (put the movie's title in)
+SELECT count(*) AS still_there FROM movies WHERE title = 'Your Movie Title';
+
+-- Admin -> Users & roles: change a role or delete a user -> users
+SELECT id, name, role FROM users ORDER BY role, name;
+
+
+-- =====================================================================================
+-- 6. CLEANUP (only needed if you stopped part-way; `npm run seed` resets everything)
+-- =====================================================================================
+DELETE FROM movies WHERE title = 'Demo Film';
+DELETE FROM genres WHERE name = 'Documentary';
+DELETE FROM users  WHERE name = 'Demo User';
+DELETE FROM rating_audit WHERE user_id NOT IN (SELECT id FROM users);   -- log rows of the deleted demo user
