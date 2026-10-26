@@ -5,7 +5,7 @@
 CREATE EXTENSION IF NOT EXISTS vector;     -- vector type, <=> distance operator, HNSW index
 CREATE EXTENSION IF NOT EXISTS pgcrypto;   -- bcrypt password hashing and session tokens
 
-DROP VIEW  IF EXISTS movie_details;
+DROP VIEW  IF EXISTS movie_details CASCADE;   -- CASCADE: also drops any view built on top of it
 DROP TABLE IF EXISTS rating_audit, sessions, ratings, movie_genres, movies, genres, users CASCADE;
 
 -- Accounts. role drives both the UI and the database role the app switches to (see security.sql).
