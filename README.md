@@ -133,8 +133,8 @@ data/                          movies.json, users.json, embeddings.json (cache)
 scripts/seed.ts                seed script
 docs/REPORT.md                 ER diagram, normalization, RBAC, triggers, queries, viva Q&A
 docs/RUBRIC.md                 where each evaluation criterion is implemented
-docs/er-diagram-chen.png       ER diagram, Chen notation (SVG source alongside)
-docs/er-diagram.png            ER diagram, crow's foot
+docs/er-diagram.png            ER diagram (Chen notation)
+docs/relational-schema.png     relational schema diagram (tables, keys, foreign-key arrows)
 ```
 
 See **[docs/REPORT.md](docs/REPORT.md)** for the report material and **[docs/RUBRIC.md](docs/RUBRIC.md)** for the rubric mapping.

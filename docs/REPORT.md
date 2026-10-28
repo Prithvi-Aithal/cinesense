@@ -50,72 +50,23 @@ Browser ──> Next.js pages (React) ──> Next.js API routes ─────
 
 **Chen notation** (entities as rectangles, relationships as diamonds, attributes as ovals, key attributes underlined, derived attributes dashed, total participation as a double line):
 
-![ER diagram, Chen notation](er-diagram-chen.png)
+![ER diagram, Chen notation](er-diagram.png)
 
-The M:N relationships RATES and CLASSIFIED_AS become the `ratings` and `movie_genres` tables, with RATES carrying the `rating` and `rated_at` attributes. The 1:N relationship HAS becomes the `sessions.user_id` foreign key, and every session must belong to a user (total participation). `avg_rating` and `rating_count` are derived in the `movie_details` view rather than stored. The SVG source is [`er-diagram-chen.svg`](er-diagram-chen.svg).
+The M:N relationships RATES and CLASSIFIED_AS become the `ratings` and `movie_genres` tables, with RATES carrying the `rating` and `rated_at` attributes. The 1:N relationship HAS becomes the `sessions.user_id` foreign key, and every session must belong to a user (total participation). `avg_rating` and `rating_count` are derived in the `movie_details` view rather than stored.
 
-**Relational (crow's-foot) view** of the same schema, as implemented in `db/schema.sql`:
+**Relational schema**, as implemented in `db/schema.sql`. Each table's columns are shown in a row, primary keys are underlined, and each arrow points from a foreign key to the primary key it references:
 
-```mermaid
-erDiagram
-    GENRES ||--o{ MOVIE_GENRES : classifies
-    MOVIES ||--o{ MOVIE_GENRES : "is classified as"
-    MOVIES ||--o{ RATINGS : receives
-    USERS ||--o{ RATINGS : gives
-    USERS ||--o{ SESSIONS : "logs in with"
-    RATINGS ||..o{ RATING_AUDIT : "changes logged by trigger"
+![Relational schema](relational-schema.png)
 
-    USERS {
-        int id PK
-        varchar name UK
-        text password_hash "bcrypt (pgcrypto)"
-        varchar role "CHECK admin or viewer"
-        timestamptz created_at
-    }
-    SESSIONS {
-        text token_hash PK "SHA-256 of cookie token"
-        int user_id FK
-        timestamptz created_at
-        timestamptz expires_at "CHECK after created_at"
-    }
-    RATING_AUDIT {
-        bigint id PK
-        varchar action "INSERT, UPDATE or DELETE"
-        int user_id
-        int movie_id
-        smallint old_rating
-        smallint new_rating
-        int changed_by
-        text db_role
-        timestamptz changed_at
-    }
-    MOVIES {
-        int id PK
-        varchar title "UK(title, year)"
-        smallint year "CHECK 1888-2100"
-        varchar director
-        text description
-        vector_384 embedding "HNSW index"
-    }
-    GENRES {
-        int id PK
-        varchar name UK
-    }
-    MOVIE_GENRES {
-        int movie_id PK,FK
-        int genre_id PK,FK
-    }
-    RATINGS {
-        int user_id PK,FK
-        int movie_id PK,FK
-        smallint rating "CHECK 1-5"
-        timestamptz rated_at
-    }
 ```
-
-![ER diagram](er-diagram.png)
-
-(The PNG above is rendered from the Mermaid source. GitHub and VS Code also render the Mermaid block directly.)
+users        (id, name, password_hash, role, created_at)
+sessions     (token_hash, user_id → users.id, created_at, expires_at)
+movies       (id, title, year, director, description, embedding vector(384))
+genres       (id, name)
+movie_genres (movie_id → movies.id, genre_id → genres.id)          PK (movie_id, genre_id)
+ratings      (user_id → users.id, movie_id → movies.id, rating, rated_at)   PK (user_id, movie_id)
+rating_audit (id, action, user_id, movie_id, old_rating, new_rating, changed_by, db_role, changed_at)
+```
 
 **Relationships**
 - USERS **M:N** MOVIES through RATINGS, an associative entity with the attribute `rating`.

@@ -13,7 +13,7 @@ This file explains each part of the demo. The commands are in **DEMO_COMMANDS.tx
 | `DEMO_COMMANDS.txt` | every command, section by section. Open it in Notepad and paste sections into psql |
 | `DML_COMMANDS.txt` | only the INSERT / UPDATE / DELETE commands (she asked for these in a separate file), plus the queries that prove a UI action reached the database |
 | `DEMO_HANDOUT.pdf` | print this: problem statement, ER diagram, relational schema, entity and attribute analysis, and the UI ↔ table map |
-| `docs/er-diagram-chen.png`, `docs/er-diagram.png` | the ER diagram (Chen) and the relational schema diagram (crow's foot) |
+| `docs/er-diagram.png`, `docs/relational-schema.png` | the ER diagram (Chen notation) and the relational schema diagram |
 
 **Before the demo (5 minutes)**
 1. Double-click `start-cinesense.bat`. It starts Docker, the `cinesense-db` database and the app, then open http://localhost:3000.
@@ -61,9 +61,9 @@ There are two kinds of "user":
 
 ## 2. ER diagram
 
-Files: `docs/er-diagram-chen.png` (Chen notation) and `docs/er-diagram.png` (crow's foot).
+File: `docs/er-diagram.png` (Chen notation).
 
-![ER diagram (Chen)](docs/er-diagram-chen.png)
+![ER diagram (Chen)](docs/er-diagram.png)
 
 **Entities (5):** USERS, MOVIES, GENRES, SESSIONS, RATING_AUDIT
 
@@ -106,6 +106,10 @@ Files: `docs/er-diagram-chen.png` (Chen notation) and `docs/er-diagram.png` (cro
 ---
 
 ## 3. Relational schema: what tables exist *(Commands §2)*
+
+File: `docs/relational-schema.png`. Each table's columns are in a row, primary keys are underlined, and arrows go from each foreign key to the primary key it references.
+
+![Relational schema](docs/relational-schema.png)
 
 ```
 users        (id PK, name UNIQUE, password_hash, role CHECK('admin','viewer'), created_at)
