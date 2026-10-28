@@ -272,6 +272,40 @@ lib/embeddings.ts            →  runs the all-MiniLM-L6-v2 model in Node to mak
 
 **Key point:** the browser never talks to the database. Pages are React client components (`"use client"`, `useState`, `useEffect`) that fetch from the API routes. The API routes are the only code that runs SQL, using the `pg` driver.
 
+### Where the database connection is (the connection string)
+
+The connection strings are in **`.env.local`** in the `cinesense` folder:
+
+```
+DATABASE_URL=postgres://cinesense_app:cinesense_app@localhost:5432/moviedb
+DATABASE_OWNER_URL=postgres://postgres:postgres@localhost:5432/moviedb
+```
+
+**Reading one:** `postgres://` **user** `:` **password** `@` **host** `:` **port** `/` **database**
+
+| Part | In `DATABASE_URL` | Meaning |
+|---|---|---|
+| user | `cinesense_app` | the database login to connect as |
+| password | `cinesense_app` | that login's password |
+| host | `localhost` | the database is on this machine, inside Docker, which publishes its port to the laptop |
+| port | `5432` | PostgreSQL's standard port (`-p 5432:5432` in the `docker run` command) |
+| database | `moviedb` | which database inside PostgreSQL |
+
+**Why there are two:**
+
+| Variable | Logs in as | Used by | Why |
+|---|---|---|---|
+| `DATABASE_URL` | `cinesense_app` | the website: `lib/db.ts` line 9, `new Pool({ connectionString: process.env.DATABASE_URL })` | a login with **no permissions of its own**. Each request switches it to the anon, viewer or admin role, so PostgreSQL enforces access (§11) |
+| `DATABASE_OWNER_URL` | `postgres` (owner) | only `npm run seed` (`scripts/seed.ts`) | creating tables, functions, triggers and roles needs the owner. The website never uses this login |
+
+The seed also sets `cinesense_app`'s password from `DATABASE_URL`, so the two always match.
+
+**How the app loads it:** Next.js reads `.env.local` automatically on `npm run dev` (the startup log shows "Environments: .env.local"). The seed loads it with `tsx --env-file=.env.local` (see `package.json`).
+
+**Why it's not on GitHub:** `.env.local` is in `.gitignore`, because passwords stay out of git. The repo has **`.env.example`** instead, a template with the same lines. To set up the project, copy it with `cp .env.example .env.local`. These are local demo passwords, and the database only accepts connections from your own laptop. A production system would use strong passwords kept in a secrets manager.
+
+**If asked "where is the database connection?":** show `.env.local`, then `lib/db.ts` line 9 where the connection pool is created from `DATABASE_URL`, and explain the two-login design.
+
 ---
 
 ## 8. Triggers: where they are, how they run, their effect *(Commands §7)*
@@ -441,6 +475,7 @@ Say this when asked "why did you use this?". `docs/REPORT.md` §1a has the full 
 - **Why HNSW and not IVFFlat?** HNSW needs no training step, works well on small data and gives high recall.
 - **Why a view for averages?** Derived data is computed, not stored, so it never goes stale and the tables stay in BCNF.
 - **Where are passwords?** bcrypt hashes made inside the database. Even admins can't read them.
+- **Where is the connection string?** In `.env.local`. `DATABASE_URL` (user `cinesense_app`) is used by the app in `lib/db.ts`, and `DATABASE_OWNER_URL` (user `postgres`) only by the seed. The file is git-ignored; `.env.example` is the template in the repo. See §7.
 - **What does ON CONFLICT do?** It makes the insert an upsert: the composite primary key turns a re-rating into an update.
 - **What is a correlated subquery?** One that refers to a column of the outer query, so it is evaluated once per outer row.
 - **BEFORE vs AFTER trigger?** A BEFORE trigger can modify or reject the row before it is written. An AFTER trigger sees the final row and is used for logging and side effects.
