@@ -14,6 +14,7 @@ This file explains each part of the demo. The commands are in **DEMO_COMMANDS.tx
 | `DML_COMMANDS.txt` | only the INSERT / UPDATE / DELETE commands (she asked for these in a separate file), plus the queries that prove a UI action reached the database |
 | `DEMO_HANDOUT.pdf` | print this: problem statement, ER diagram, relational schema, entity and attribute analysis, and the UI ↔ table map |
 | `docs/er-diagram.png`, `docs/relational-schema.png` | the ER diagram (Chen notation) and the relational schema diagram |
+| `docs/diagrams.pdf` | **print this for the hard copy:** page 1 ER diagram, page 2 relational schema |
 
 **Before the demo (5 minutes)**
 1. Double-click `start-cinesense.bat`. It starts Docker, the `cinesense-db` database and the app, then open http://localhost:3000.

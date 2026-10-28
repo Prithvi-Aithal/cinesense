@@ -135,6 +135,7 @@ docs/REPORT.md                 ER diagram, normalization, RBAC, triggers, querie
 docs/RUBRIC.md                 where each evaluation criterion is implemented
 docs/er-diagram.png            ER diagram (Chen notation)
 docs/relational-schema.png     relational schema diagram (tables, keys, foreign-key arrows)
+docs/diagrams.pdf              print copy: ER diagram (page 1) and relational schema (page 2)
 ```
 
 See **[docs/REPORT.md](docs/REPORT.md)** for the report material and **[docs/RUBRIC.md](docs/RUBRIC.md)** for the rubric mapping.
