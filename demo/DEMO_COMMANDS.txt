@@ -873,11 +873,15 @@ SELECT id, title FROM movies WHERE embedding IS NULL;
 \echo =====================================================================
 \echo  8. ROLES AND SECURITY (GRANTs, row-level security)   code: db/security.sql
 \echo =====================================================================
--- In the website: log in as a viewer, then open the admin page:
+-- In the website, STEP 1 (a viewer is refused): Log in as Aarav (a VIEWER), then open the admin page:
 --  TYPE:  name  Aarav      password  viewer123
 --  PS> Start-Process "http://localhost:3000/admin"
---   -> "Admins only". As admin, Query Lab (http://localhost:3000/lab) -> "Role privileges"
---      and "Row-level security policies" read these rules live from PostgreSQL.
+--   -> the page says "Admins only"
+-- STEP 2 (admin sees the rules): click  Log out , click  Log in  as admin:
+--  TYPE:  name  admin      password  admin123
+--  PS> Start-Process "http://localhost:3000/lab"
+--   -> Query Lab: click "Role privileges" and "Row-level security policies"; they read these
+--      rules live from PostgreSQL. (Query Lab is admin-only, so this does not work as Aarav.)
 --  PS> code -g db/security.sql:39       (GRANTs per role)
 --  PS> code -g db/security.sql:63       (row-level security policies)
 --  PS> code -g lib/db.ts:39             (withSession: SET LOCAL ROLE for every request)
