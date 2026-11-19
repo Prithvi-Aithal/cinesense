@@ -76,7 +76,7 @@
 --   "Show CRUD from the UI reaching the database"         -> 5.5
 --   "Show the triggers" / "before and after"              -> 6.1
 --   "Show functions / procedures"                         -> 6.2
---   "Show nested / correlated / advanced queries"         -> 6.3
+--   "Show joins / nested / correlated / advanced queries" -> 6.3  (A = what the website runs)
 --   "Show the vector queries"                             -> 7
 --   "Why did you use this?" (justification)               -> 10
 --   "Show roles / security / RBAC"                        -> 8
@@ -540,9 +540,156 @@ SELECT pg_get_functiondef('bayesian_score(numeric,int,numeric,int)'::regprocedur
 
 -- Q: "Run a procedure" - see 5.4b (add_movie, update_movie, set_user_role are all CALLed there)
 
--- ---------- 6.3 ADVANCED QUERIES ----------
+-- ---------- 6.3 ADVANCED QUERIES - THE ONES THE PROJECT ACTUALLY RUNS ----------
+-- Part A = the queries the WEBSITE runs (copied unchanged from lib/queries.ts, only the
+--          $1 $2 $3 placeholders are replaced by real values). Each says which page runs it.
+-- Part B = the queries on the Query Lab page (/lab, admin), from lib/lab.ts.
+--  PS> code -g lib/queries.ts:8        (every SQL statement the website runs, in one file)
+-- In the website, every page has "Show the query behind this" with the exact SQL it ran.
 
--- Q: "Show a join" - 3 tables: Sci-Fi movies after 2010
+-- ===== Part A: queries the website runs =====
+-- Run this first: it fills in the values the website would pass ($1, $2 ...)
+SELECT id AS aarav FROM users WHERE name = 'Aarav' \gset
+SELECT id AS newviewer FROM users WHERE name = 'New Viewer' \gset
+SELECT id AS inter FROM movies WHERE title = 'Interstellar' \gset
+
+-- A1 Q: "Show a JOIN you use"  - Browse search box (Keyword · SQL), typing  space  as Aarav
+--    JOIN through the view + LEFT JOIN (keeps movies he hasn't rated), ILIKE, = ANY(array)
+--  PS> code -g lib/queries.ts:32       (keywordSearch)   run by app/api/movies/route.ts:12
+SELECT d.*, r.rating AS my_rating
+FROM movie_details d
+LEFT JOIN ratings r ON r.movie_id = d.id AND r.user_id = :aarav
+WHERE (NULL::text IS NULL OR NULL = ANY (d.genres))
+  AND ('space'::text IS NULL
+       OR d.title       ILIKE '%' || 'space' || '%'
+       OR d.director    ILIKE '%' || 'space' || '%'
+       OR d.description ILIKE '%' || 'space' || '%')
+ORDER BY d.title;
+
+-- A2 Q: "Another join"  - My Ratings page (INNER JOIN ratings -> view), as Aarav
+--  PS> code -g lib/queries.ts:59       (userRatings)   run by app/api/me/ratings/route.ts
+SELECT d.*, r.rating AS my_rating, r.rated_at
+FROM ratings r
+JOIN movie_details d ON d.id = r.movie_id
+WHERE r.user_id = :aarav
+ORDER BY r.rating DESC, r.rated_at DESC;
+
+-- A3 Q: "Show a NESTED / CORRELATED subquery you use"  - Admin -> Users & roles tab
+--    LEFT JOIN + GROUP BY + COUNT, and a CORRELATED subquery in SELECT: it uses u.id from
+--    the outer row, so it runs again for every user (active sessions per user)
+--  PS> code -g lib/queries.ts:19       (listUsers)   run by app/api/users/route.ts
+SELECT u.id, u.name, u.role, u.created_at,
+       COUNT(r.movie_id)::int AS rating_count,
+       (SELECT COUNT(*)::int FROM sessions s WHERE s.user_id = u.id AND s.expires_at > now()) AS active_sessions
+FROM users u
+LEFT JOIN ratings r ON r.user_id = u.id
+GROUP BY u.id
+ORDER BY u.role, u.name;
+
+-- A4 Q: "Aggregate + stored function + NOT EXISTS"  - For You for a user with no 4-star
+--    ratings (cold start), e.g. New Viewer. Aggregates come from the view, bayesian_score()
+--    is our function, NOT EXISTS is a correlated subquery (skips movies already rated)
+--  PS> code -g lib/queries.ts:75       (popular)   run by app/api/recommendations/route.ts:24
+SELECT d.*, NULL::int AS my_rating,
+       bayesian_score(d.avg_rating, d.rating_count) AS score
+FROM movie_details d
+WHERE d.rating_count > 0
+  AND (NULL::text IS NULL OR NULL = ANY (d.genres))
+  AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = :newviewer AND r.movie_id = d.id)
+ORDER BY score DESC, d.rating_count DESC, d.title
+LIMIT 12;
+
+-- A5 Q: "CTE + nested subqueries + vector"  - Movie page (Interstellar) -> More like this,
+--    with "Same genre only" ticked ($2 = true). WITH nn AS = CTE; (SELECT embedding ...) =
+--    scalar subqueries; EXISTS joins movie_genres to itself = correlated subquery
+--  PS> code -g lib/queries.ts:106      (similar)   run by app/api/movies/[id]/similar/route.ts
+WITH nn AS (
+  SELECT m.id, m.embedding <=> (SELECT embedding FROM movies WHERE id = :inter) AS distance
+  FROM movies m
+  WHERE m.id <> :inter AND m.embedding IS NOT NULL
+    AND (SELECT embedding FROM movies WHERE id = :inter) IS NOT NULL   -- no vector yet: no neighbours
+    AND (NOT true::boolean OR EXISTS (
+          SELECT 1 FROM movie_genres a JOIN movie_genres b ON b.genre_id = a.genre_id
+          WHERE a.movie_id = m.id AND b.movie_id = :inter))
+  ORDER BY m.embedding <=> (SELECT embedding FROM movies WHERE id = :inter)
+  LIMIT 6
+)
+SELECT d.*, ROUND((1 - nn.distance)::numeric, 3) AS similarity
+FROM nn
+JOIN movie_details d ON d.id = nn.id
+ORDER BY nn.distance;
+
+-- A6 Q: "Your most complex query"  - For You page as Aarav (HYBRID SQL + vector)
+--    CTE + correlated NOT EXISTS + EXISTS + vector kNN + LEFT JOIN LATERAL ("Because you liked")
+--  PS> code -g lib/queries.ts:127      (recommend)   run by app/api/recommendations/route.ts:35
+--    $1 is Aarav's taste vector. The website builds it in Node (route.ts:34): every movie he
+--    rated, weighted by (rating - 3), added up. This line builds the same vector in SQL:
+SELECT SUM(m.embedding * array_fill((r.rating - 3)::real, ARRAY[384])::vector)::text AS taste
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+WHERE r.user_id = :aarav AND m.embedding IS NOT NULL \gset
+WITH nn AS (
+  SELECT m.id, m.embedding <=> :'taste'::vector AS distance
+  FROM movies m
+  WHERE m.embedding IS NOT NULL
+    AND NOT EXISTS (SELECT 1 FROM ratings r WHERE r.user_id = :aarav AND r.movie_id = m.id)
+    AND (NULL::text IS NULL OR EXISTS (
+          SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id
+          WHERE mg.movie_id = m.id AND g.name = NULL))
+  ORDER BY m.embedding <=> :'taste'::vector
+  LIMIT 12
+)
+SELECT d.title, d.genres, ROUND((1 - nn.distance)::numeric, 3) AS similarity,
+       because.title AS because_you_liked
+FROM nn
+JOIN movie_details d ON d.id = nn.id
+LEFT JOIN LATERAL (
+  SELECT lm.id, lm.title
+  FROM ratings lr
+  JOIN movies lm ON lm.id = lr.movie_id
+  WHERE lr.user_id = :aarav AND lr.rating >= 4
+  ORDER BY lm.embedding <=> (SELECT embedding FROM movies WHERE id = nn.id)
+  LIMIT 1
+) because ON true
+ORDER BY nn.distance;
+--   -> the same movies, in the same order, as the For You page for Aarav
+
+-- A7 Q: "A RECURSIVE query you use"  - Movie page -> Similarity trail calls this function;
+--    inside it is WITH RECURSIVE (db/functions.sql:117)
+--  PS> code -g db/functions.sql:113    (similarity_trail)   run by app/api/movies/[id]/trail/route.ts:6
+SELECT step, id, title, similarity FROM similarity_trail(:inter, 5);
+
+-- A8 Q: "Several LEFT JOINs, one table joined twice"  - Admin -> Activity log tab
+--    users is joined twice: once for whose rating it is, once for who changed it
+--  PS> code -g lib/queries.ts:185      (auditLog)   run by app/api/audit/route.ts
+SELECT a.id, a.action, a.old_rating, a.new_rating, a.db_role, a.changed_at,
+       COALESCE(u.name, '(deleted user #' || a.user_id || ')') AS user_name,
+       COALESCE(m.title, '(deleted movie #' || a.movie_id || ')') AS movie_title,
+       by_u.name AS changed_by_name
+FROM rating_audit a
+LEFT JOIN users  u    ON u.id = a.user_id
+LEFT JOIN movies m    ON m.id = a.movie_id
+LEFT JOIN users  by_u ON by_u.id = a.changed_by
+ORDER BY a.changed_at DESC, a.id DESC
+LIMIT 50;
+
+-- A9 Q: "Join + vector functions"  - Admin -> Movies & vectors tab (the table of all movies)
+--  PS> code -g lib/queries.ts:160      (adminMovies)   run by app/api/admin/movies/route.ts
+SELECT d.id, d.title, d.year, d.director, d.genres, d.rating_count,
+       vector_dims(m.embedding) AS dims,
+       ROUND(vector_norm(m.embedding)::numeric, 3) AS norm
+FROM movie_details d
+JOIN movies m ON m.id = d.id
+ORDER BY d.title;
+
+-- (Meaning search, lib/queries.ts:87, is the same CTE shape as A5, but its $1 is the vector of
+--  the text you type, which only the website can compute. Show it from PowerShell instead:)
+--  PS> (Invoke-RestMethod "http://localhost:3000/api/movies?mode=semantic&q=lonely%20robot%20falls%20in%20love").items | Select-Object -First 5 title
+
+-- ===== Part B: the Query Lab page (/lab, log in as admin) runs these =====
+--  PS> Start-Process "http://localhost:3000/lab"
+--  PS> code -g lib/lab.ts:16           (all Query Lab queries; the page also shows EXPLAIN ANALYZE)
+
+-- B1 Q: "Show a join" - 3 tables: Sci-Fi movies after 2010    (Query Lab: "Genre filter", lib/lab.ts:30)
 SELECT m.title, m.year
 FROM movies m
 JOIN movie_genres mg ON mg.movie_id = m.id
@@ -550,7 +697,8 @@ JOIN genres g        ON g.id = mg.genre_id
 WHERE g.name = 'Sci-Fi' AND m.year > 2010
 ORDER BY m.year DESC;
 
--- Q: "Show a NESTED query" - users who never rated a Horror movie (inner query runs once)
+-- B2 Q: "Show a NESTED query" - users who never rated a Horror movie (inner query runs once)
+--    (Query Lab: "Users who never rated a genre", lib/lab.ts:81)
 SELECT u.name, u.role
 FROM users u
 WHERE u.id NOT IN (
@@ -562,8 +710,9 @@ WHERE u.id NOT IN (
 )
 ORDER BY u.name;
 
--- Q: "Show a CORRELATED query" - movies 0.5+ above their genre's average
+-- B3 Q: "Show a CORRELATED query" - movies 0.5+ above their genre's average
 --    (the inner query uses g.id from the outer row, so it runs again for every row)
+--    (Query Lab: "Above their genre's average", lib/lab.ts:60)
 SELECT d.title, g.name AS genre, d.avg_rating,
        (SELECT ROUND(AVG(r2.rating), 2)
         FROM ratings r2 JOIN movie_genres mg2 ON mg2.movie_id = r2.movie_id
@@ -578,7 +727,8 @@ WHERE d.rating_count >= 2
 ORDER BY d.avg_rating DESC, d.title
 LIMIT 12;
 
--- Q: "Show an aggregate with GROUP BY / HAVING" (+ a stored function) - top rated
+-- B4 Q: "Show an aggregate with GROUP BY / HAVING" (+ a stored function) - top rated
+--    (Query Lab: "Top rated", lib/lab.ts:44)
 SELECT m.title, COUNT(*) AS ratings, ROUND(AVG(r.rating), 2) AS avg,
        bayesian_score(AVG(r.rating), COUNT(*)::int) AS score
 FROM ratings r JOIN movies m ON m.id = r.movie_id
@@ -587,48 +737,24 @@ HAVING COUNT(*) >= 2
 ORDER BY score DESC
 LIMIT 10;
 
--- Q: "Users with how many movies each rated" (LEFT JOIN keeps users with 0 ratings)
-SELECT u.name, u.role, COUNT(r.movie_id) AS movies_rated, ROUND(AVG(r.rating), 2) AS avg_given
-FROM users u LEFT JOIN ratings r ON r.user_id = u.id
-GROUP BY u.id ORDER BY u.role, u.name;
-
--- Q: "Movies per genre"
-SELECT g.name AS genre, COUNT(mg.movie_id) AS movies
-FROM genres g LEFT JOIN movie_genres mg ON mg.genre_id = g.id
-GROUP BY g.name
-ORDER BY movies DESC;
-
 -- Q: "Where are your VIEWS?"   one view: movie_details (movies + genres array + avg_rating + rating_count)
 SELECT table_name AS view_name FROM information_schema.views WHERE table_schema = 'public';
 SELECT pg_get_viewdef('movie_details'::regclass, true);          -- the view's SQL, read back from PostgreSQL
 --  PS> code -g db/schema.sql:78        (CREATE VIEW movie_details)
---   Read by the website in lib/queries.ts: keywordSearch 32, movieById 43, userRatings 59,
---   popular 75, semanticSearch 87, similar 106, recommend 127, adminMovies 160, movieText 181
---  PS> code -g lib/queries.ts:34       (FROM movie_details d - the Browse keyword search)
+--   Used by A1, A2, A4, A5, A6, A9 above (lib/queries.ts lines 34, 45, 62, 78, 100, 120, 143, 164, 181)
 --   Why a view: avg_rating / rating_count are DERIVED, so they are computed, never stored (stays BCNF).
 
--- Q: "Where are your CTEs (WITH ... AS)?"
---   WITH nn AS (...)          lib/queries.ts:88  semanticSearch (Meaning search)
---                             lib/queries.ts:107 similar (More like this)
---                             lib/queries.ts:128 recommend (For You)
+-- Q: "Where are your CTEs (WITH ... AS)?"   -> run A5 or A6 above
+--   WITH nn AS (...)          lib/queries.ts:88 Meaning search, :107 More like this (A5), :128 For You (A6)
 --     -> the CTE does the vector kNN on movies (uses the HNSW index), then joins only the
 --        few winners to the movie_details view
---   WITH RECURSIVE trail ...  db/functions.sql:117  similarity_trail() (Movie page -> Similarity trail)
---   WITH taste AS (...)       lib/lab.ts:145  Query Lab "Hybrid"; written out below in this section
+--   WITH RECURSIVE trail ...  db/functions.sql:117 inside similarity_trail() (A7, written out in B5)
+--   WITH taste AS (...)       lib/lab.ts:145 Query Lab "Recommendations, entirely in SQL" (B6)
 --  PS> code -g lib/queries.ts:88
---  PS> code -g lib/queries.ts:128
 --  PS> code -g db/functions.sql:117
--- A short CTE to run live (top 3 genres by average rating):
-WITH genre_avg AS (
-  SELECT g.name, ROUND(AVG(r.rating)::numeric, 2) AS avg_rating, COUNT(*) AS ratings
-  FROM genres g
-  JOIN movie_genres mg ON mg.genre_id = g.id
-  JOIN ratings r       ON r.movie_id  = mg.movie_id
-  GROUP BY g.name
-)
-SELECT * FROM genre_avg ORDER BY avg_rating DESC LIMIT 3;
 
--- Q: "Show a RECURSIVE query" (written out; the same as similarity_trail())
+-- B5 Q: "Show the RECURSIVE query written out" (the same as similarity_trail(), A7)
+--    (Query Lab: "Similarity trail", lib/lab.ts:99)
 WITH RECURSIVE trail (step, id, path, embedding, distance) AS (
   SELECT 0, m.id, ARRAY[m.id], m.embedding, NULL::float8
   FROM movies m WHERE m.title = 'Interstellar'
@@ -648,8 +774,8 @@ SELECT t.step, mv.title, ROUND((1 - t.distance)::numeric, 3) AS similarity
 FROM trail t JOIN movies mv ON mv.id = t.id
 ORDER BY t.step;
 
--- Q: "Show your most complex query" - HYBRID SQL + VECTOR: recommendations for Aarav
---    (CTE + EXISTS + NOT EXISTS + vector kNN; the app's version is SQL.recommend lib/queries.ts:127)
+-- B6 Q: "Recommendations in ONE SQL statement" - Aarav, Thriller only
+--    (Query Lab: "Recommendations, entirely in SQL", lib/lab.ts:140; the website's version is A6)
 WITH taste AS (
   SELECT AVG(m.embedding) AS v
   FROM ratings r JOIN movies m ON m.id = r.movie_id
