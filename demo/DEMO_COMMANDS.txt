@@ -13,6 +13,8 @@
 --  Each block starts with   -- Q: <the question she asks>   so you know when to run it.
 --  Lines marked  -- EXPECTED ERROR  fail ON PURPOSE (they prove a constraint / rule works).
 --  Lines starting with \ are psql commands, not SQL.
+--  psql prompt shows  moviedb-#  (or '# or (# ) instead of  moviedb=# ? It is waiting for the rest
+--  of a statement (e.g. a PS> line was pasted into psql by mistake). Press Ctrl+C to clear it.
 --  Everything cleans up after itself, so the data is the same afterwards
 --  (only rating_audit keeps a few new log rows).
 -- =====================================================================================
