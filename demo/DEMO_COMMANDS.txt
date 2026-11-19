@@ -48,6 +48,9 @@
 --  Step 6 - open psql in a THIRD PowerShell window (every SQL block below is pasted here):
 --  PS> docker exec -it cinesense-db psql -U postgres -d moviedb
 --      The prompt becomes  moviedb=#   To leave psql:  \q
+--      Then paste this line into psql ONCE, so long results print straight into the window
+--      instead of opening a viewer that ends in (END) and needs  q  to close:
+\pset pager off
 --
 --  Step 7 - make sure nobody is logged in on the website: if the top right shows a name,
 --           click  Log out .
