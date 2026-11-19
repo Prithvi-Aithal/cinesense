@@ -5,6 +5,10 @@
 --  THREE KINDS OF LINES - you never have to type anything yourself:
 --   * SQL blocks (no -- in front)  -> copy the block, paste into the PSQL window, press Enter.
 --   * lines starting  --  PS>      -> copy everything AFTER "PS> " into a POWERSHELL window.
+--       PowerShell, NOT Command Prompt: its prompt starts with  PS C:\...>  (cmd shows only C:\...>
+--       and fails with errors like ".items was unexpected at this time").
+--       Open it: Start menu -> type  PowerShell  -> Windows PowerShell.
+--       Already in a cmd window? Type  powershell  and press Enter; the prompt changes to PS C:\...>
 --   * lines starting  --  TYPE:    -> the exact text to type/paste into the website.
 --  Each block starts with   -- Q: <the question she asks>   so you know when to run it.
 --  Lines marked  -- EXPECTED ERROR  fail ON PURPOSE (they prove a constraint / rule works).
@@ -22,7 +26,8 @@
 --  PS> docker start cinesense-db
 --  PS> cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"; npm run dev
 --
---  Step 2 - open a SECOND PowerShell window and go to the project folder (use it for every PS> line below):
+--  Step 2 - open a SECOND PowerShell window (Start -> PowerShell; prompt must start with PS) and go to
+--           the project folder (use it for every PS> line below):
 --  PS> cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"
 --
 --  Step 3 - reset the sample data ONCE, before the demo (NEVER during it; it empties the activity log):
