@@ -83,10 +83,9 @@ Adding a movie: use **Admin → Add movie**, or append it to `data/movies.json` 
 | File | Purpose |
 |---|---|
 | `start-cinesense.bat` | Windows: starts Docker, the `cinesense-db` container and the app |
-| `DEMO_COMMANDS.txt` | every demo command for psql, section by section: tables, constraints, CRUD, triggers with before/after, functions and procedures, advanced queries, vector CRUD, security, and ready answers for live modifications |
-| `DML_COMMANDS.txt` | only the INSERT / UPDATE / DELETE commands, plus queries proving a UI action reached the database |
-| `DEMO_EXPLANATION.md` (and `.pdf`) | what to say for each part of the demo |
-| `DEMO_HANDOUT.pdf` | printable: problem statement, ER diagram, relational schema, entity and attribute analysis, UI ↔ table map |
+| `demo/DEMO_GUIDE.pdf` | what to know and say for each demo item, how to start the app, where each button, trigger, function and procedure is in the code and what invokes it |
+| `demo/DEMO_COMMANDS.txt` | every psql command for the demo, in the evaluator's order, each tagged with the question it answers (DDL, all DML in section 5, triggers with before/after, functions, procedures, advanced and vector queries, security, live modifications) |
+| `docs/diagrams.pdf` | print copy: ER diagram (page 1) and relational schema (page 2) |
 
 ## Project layout
 

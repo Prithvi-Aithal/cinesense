@@ -1,0 +1,799 @@
+-- =====================================================================================
+--  CINESENSE - EVERY DEMO COMMAND, IN THE TEACHER'S ORDER (PostgreSQL 16 + pgvector)
+--  File: demo/DEMO_COMMANDS.txt        What to say for each part: demo/DEMO_GUIDE.pdf
+--
+--  Each block starts with   -- Q: <the question she asks>   so you know when to run it.
+--  Lines marked  -- EXPECTED ERROR  fail ON PURPOSE (they prove a constraint / rule works).
+--  Lines starting with \ are psql commands, not SQL.
+--  Everything cleans up after itself, so the data is the same afterwards
+--  (only rating_audit keeps a few new log rows).
+-- =====================================================================================
+--
+--  ---------------- 0. START EVERYTHING (do this before she comes) ----------------
+--  1. Open Docker Desktop and wait until the engine is running.
+--  2. Double-click  cinesense\start-cinesense.bat   (starts the database and the app)
+--     or by hand:   docker start cinesense-db
+--                   cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"
+--                   npm run dev                          -> open http://localhost:3000
+--  3. Open psql in a 2nd window:   docker exec -it cinesense-db psql -U postgres -d moviedb
+--  4. Reset the sample data ONCE, before the demo (never during it):   npm run seed
+--  5. Do one "Meaning" search on Browse (e.g. robot) so the vector model is loaded.
+--  Logins for the UI:  admin / admin123   (admin)      Aarav / viewer123   (viewer)
+--  Leave psql: \q
+--
+--  ---------------- Q: "WHERE IS THE CONNECTION STRING?" ----------------
+--  File cinesense\.env.local  (git-ignored; the template in GitHub is .env.example):
+--     DATABASE_URL=postgres://cinesense_app:cinesense_app@localhost:5432/moviedb
+--     DATABASE_OWNER_URL=postgres://postgres:postgres@localhost:5432/moviedb
+--  Format: postgres://<user>:<password>@<host>:<port>/<database>
+--  The website uses DATABASE_URL in lib/db.ts line 9:
+--     new Pool({ connectionString: process.env.DATABASE_URL })
+--  DATABASE_OWNER_URL (owner login "postgres") is used only by  npm run seed.
+--  Show it: open .env.local in Notepad/VS Code, then lib/db.ts line 9.  (guide part 11)
+--
+--  HOW TO RUN: open this file in Notepad, copy ONE block, paste it into psql.
+--  (Whole file at once, from the cinesense folder:
+--     docker cp demo/DEMO_COMMANDS.txt cinesense-db:/tmp/demo.sql
+--     docker exec -it cinesense-db psql -U postgres -d moviedb -f /tmp/demo.sql )
+--
+--  ---------------- QUESTION -> SECTION ----------------
+--   "Explain the problem statement"                       -> no command (guide part 1)
+--   "Show the ER diagram / mapping"                       -> 2   (and the printed sheet)
+--   "How many strong / weak entities? attribute types?"   -> 3
+--   "Show the tables" / "Show create table for X"         -> 4   (4.3 = create table)
+--   "Show the constraints"                                -> 4.4
+--   "Show your DML / INSERT UPDATE DELETE"                -> 5   (5.1-5.4)
+--   "Show CRUD from the UI reaching the database"         -> 5.5
+--   "Show the triggers" / "before and after"              -> 6.1
+--   "Show functions / procedures"                         -> 6.2
+--   "Show nested / correlated / advanced queries"         -> 6.3
+--   "Show the vector queries"                             -> 7
+--   "Why did you use this?" (justification)               -> no command (guide part 9)
+--   "Show roles / security / RBAC"                        -> 8
+--   "Change something now" (modification)                 -> 9   (M1-M12)
+--   "Where is the connection string?"                     -> 0 (just above)
+--   "Where is X in the code?"                             -> the  -- code:  lines next to
+--                                                            each command, and guide part 11
+-- =====================================================================================
+
+\pset pager off
+\pset null '(null)'
+\x off
+
+
+\echo
+\echo =====================================================================
+\echo  1. PROBLEM STATEMENT  (no command - say it in ~15 seconds, guide part 1)
+\echo =====================================================================
+-- "Keyword search only finds exact words, so users miss movies that are similar in
+--  meaning. CineSense keeps users, movies, genres and ratings in SQL tables and a
+--  384-number meaning vector per movie in pgvector, and combines both to recommend."
+-- To show it working: Browse -> switch to "Meaning · Vector" -> type
+--   lonely robot falls in love      -> WALL-E and Her appear (keyword search finds 0)
+
+
+\echo
+\echo =====================================================================
+\echo  2. ER DIAGRAM AND THE UI MAPPING  (show the printed sheet: docs/diagrams.pdf page 1)
+\echo =====================================================================
+
+-- Q: "Which table is behind each entity / relationship?" (rows in each one)
+SELECT 'users  (entity USER)'                AS what, COUNT(*) FROM users        UNION ALL
+SELECT 'movies (entity MOVIE)',                       COUNT(*) FROM movies       UNION ALL
+SELECT 'genres (entity GENRE)',                       COUNT(*) FROM genres       UNION ALL
+SELECT 'sessions (entity SESSION)',                   COUNT(*) FROM sessions     UNION ALL
+SELECT 'rating_audit (entity RATING_AUDIT)',          COUNT(*) FROM rating_audit UNION ALL
+SELECT 'ratings (relationship RATES, M:N)',           COUNT(*) FROM ratings      UNION ALL
+SELECT 'movie_genres (relationship CLASSIFIED_AS)',   COUNT(*) FROM movie_genres;
+
+
+\echo
+\echo =====================================================================
+\echo  3. ENTITIES AND ATTRIBUTES  (printed sheet page 2; answers in guide part 3)
+\echo =====================================================================
+-- Answers to say:  strong entities = 5 (USER, MOVIE, GENRE, SESSION, RATING_AUDIT)
+--                  weak entities   = 0 (SESSION depends on USER but has its own key token_hash)
+--                  relationships   = 3 (RATES M:N, CLASSIFIED_AS M:N, HAS 1:N)
+--                  multivalued     = genres of a movie -> moved to its own table movie_genres
+--                  derived         = avg_rating, rating_count (computed by the view, below)
+--                  composite key   = (title, year) on movies; (user_id, movie_id) on ratings
+
+-- Q: "Show me a derived attribute" (avg_rating and rating_count are computed, never stored)
+SELECT title, genres, avg_rating, rating_count FROM movie_details
+WHERE title IN ('Interstellar', 'WALL-E', 'Inception') ORDER BY title;
+\d+ movie_details
+
+-- Q: "Show me the multivalued attribute" (one movie, many genres -> rows in movie_genres)
+SELECT m.title, g.name AS genre
+FROM movies m JOIN movie_genres mg ON mg.movie_id = m.id JOIN genres g ON g.id = mg.genre_id
+WHERE m.title = 'Interstellar';
+
+
+\echo
+\echo =====================================================================
+\echo  4. DDL - THE TABLES THAT WERE CREATED
+\echo     code: db/schema.sql (tables + view), db/indexes.sql (indexes)
+\echo =====================================================================
+
+-- 4.1 Q: "Show your tables"
+\dt
+\dv
+\dx
+
+-- 4.2 Q: "Show the structure of every table" (columns, types, keys, FKs, triggers)
+\d users
+\d movies
+\d genres
+\d movie_genres
+\d ratings
+\d sessions
+\d rating_audit
+
+-- 4.3 Q: "Show CREATE TABLE for <table>"
+--   PostgreSQL has no SHOW CREATE TABLE. Run this in POWERSHELL (not psql), change the name:
+--     docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t movies
+--   (users / genres / movie_genres / ratings / sessions / rating_audit work the same way)
+--   Or open db/schema.sql and show the CREATE TABLE there (users line 13, genres 21,
+--   movies 26, movie_genres 37, ratings 45, sessions 54, rating_audit 64, view 78).
+--   Inside psql, \d <table> (4.2) shows the same information.
+
+-- 4.4 Q: "Show the constraints"   contype: p = PRIMARY KEY, f = FOREIGN KEY, u = UNIQUE, c = CHECK
+SELECT conrelid::regclass AS table_name,
+       conname            AS constraint_name,
+       CASE contype WHEN 'p' THEN 'PRIMARY KEY' WHEN 'f' THEN 'FOREIGN KEY'
+                    WHEN 'u' THEN 'UNIQUE'      WHEN 'c' THEN 'CHECK' END AS type,
+       pg_get_constraintdef(oid) AS definition
+FROM pg_constraint
+WHERE connamespace = 'public'::regnamespace
+ORDER BY 1, 3;
+
+-- Q: "Which columns are NOT NULL?"
+SELECT table_name, column_name
+FROM information_schema.columns
+WHERE table_schema = 'public' AND is_nullable = 'NO'
+  AND table_name IN ('users','movies','genres','movie_genres','ratings','sessions','rating_audit')
+ORDER BY table_name, ordinal_position;
+
+-- 4.5 Q: "Show your indexes" (B-tree for SQL, HNSW for vectors)   code: db/indexes.sql
+SELECT tablename, indexname, indexdef FROM pg_indexes WHERE schemaname = 'public' ORDER BY 1, 2;
+
+
+\echo
+\echo =====================================================================
+\echo  5. DML - INSERT / SELECT / UPDATE / DELETE   (she asked for these in one place)
+\echo     Uses only demo rows (Demo User, Demo Film, Documentary, DemoUser, Demo Movie).
+\echo =====================================================================
+
+-- ---------- 5.1 CREATE (INSERT) ----------
+
+-- Q: "Insert a user"  (through the stored function: the password is bcrypt-hashed in the DB)
+--    code: function register_user  db/functions.sql:40, called by the Sign up button
+SELECT register_user('Demo User', 'demo123') AS new_user_id;
+
+-- Q: "Plain INSERT"
+INSERT INTO genres (name) VALUES ('Documentary') RETURNING id, name;
+
+-- Q: "INSERT ... SELECT" - a new movie with a vector copied from WALL-E
+--    (the app computes a real vector from the description; psql can't run the model)
+INSERT INTO movies (title, year, director, description, embedding)
+SELECT 'Demo Film', 2025, 'Demo Director',
+       'A lonely robot on an abandoned planet falls in love while cleaning up the trash.', embedding
+FROM movies WHERE title = 'WALL-E'
+RETURNING id, title, year, vector_dims(embedding) AS vector_dims;
+
+-- Q: "Insert into the many-to-many table"
+INSERT INTO movie_genres (movie_id, genre_id)
+SELECT m.id, g.id FROM movies m, genres g
+WHERE m.title = 'Demo Film' AND g.name IN ('Sci-Fi', 'Documentary');
+
+-- Q: "Insert ratings" (composite primary key: one rating per user per movie)
+--    The audit trigger logs each one (see 6.1).
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 5 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Demo Film';
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 3 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Interstellar';
+
+-- Q: "What stops bad data?" - each of these fails on purpose
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 6 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Titanic';     -- EXPECTED ERROR: CHECK rating 1-5
+INSERT INTO ratings (user_id, movie_id, rating) VALUES (99999, 1, 4);                               -- EXPECTED ERROR: FOREIGN KEY (no such user)
+INSERT INTO genres (name) VALUES ('Documentary');                                                   -- EXPECTED ERROR: UNIQUE (genre exists)
+INSERT INTO movies (title, year, description) VALUES ('Too Old', 1500, 'Before cinema existed.');  -- EXPECTED ERROR: CHECK year 1888-2100
+INSERT INTO movies (title, year, description) VALUES ('Interstellar', 2014, 'Duplicate.');         -- EXPECTED ERROR: UNIQUE (title, year)
+INSERT INTO movies (title, year) VALUES ('No Description', 2020);                                  -- EXPECTED ERROR: NOT NULL description
+SELECT register_user('Shorty', '123');                                                             -- EXPECTED ERROR: password under 6 characters
+
+-- ---------- 5.2 READ (SELECT) ----------
+
+-- Q: "Show the users" (password is a bcrypt hash, never plain text)
+SELECT id, name, role, left(password_hash, 15) || '...' AS password_hash, created_at::date
+FROM users ORDER BY role, id;
+
+-- Q: "Read what you inserted"
+SELECT id, name, role, created_at FROM users WHERE name = 'Demo User';
+SELECT id, title, genres, avg_rating, rating_count FROM movie_details WHERE title = 'Demo Film';
+SELECT u.name, m.title, r.rating, r.rated_at
+FROM ratings r JOIN users u ON u.id = r.user_id JOIN movies m ON m.id = r.movie_id
+WHERE u.name = 'Demo User' ORDER BY m.title;
+SELECT action, old_rating, new_rating, db_role FROM rating_audit
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User') ORDER BY id;     -- written by the audit trigger
+
+-- ---------- 5.3 UPDATE ----------
+
+-- Q: "Show an upsert" - inserting a rating that exists updates it (ON CONFLICT)
+--    This is exactly what clicking the stars runs. code: SQL.upsertRating lib/queries.ts:50
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 4 FROM users u, movies m WHERE u.name = 'Demo User' AND m.title = 'Interstellar'
+ON CONFLICT (user_id, movie_id) DO UPDATE SET rating = EXCLUDED.rating
+RETURNING user_id, movie_id, rating, rated_at;
+
+-- Q: "Plain UPDATE"
+UPDATE ratings SET rating = 2
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User')
+  AND movie_id = (SELECT id FROM movies WHERE title = 'Interstellar')
+RETURNING user_id, movie_id, rating;
+
+UPDATE movies SET director = 'Updated Director', year = 2024 WHERE title = 'Demo Film'
+RETURNING id, title, year, director;
+
+-- Q: "Update a user's role" (and the CHECK that guards it)
+UPDATE users SET role = 'admin'  WHERE name = 'Demo User' RETURNING id, name, role;
+UPDATE users SET role = 'viewer' WHERE name = 'Demo User' RETURNING id, name, role;
+UPDATE users SET role = 'superuser' WHERE name = 'Demo User';                                -- EXPECTED ERROR: CHECK role
+
+-- ---------- 5.4 DELETE ----------
+
+-- Q: "Delete a row" (the audit trigger logs it)
+DELETE FROM ratings
+WHERE user_id = (SELECT id FROM users WHERE name = 'Demo User')
+  AND movie_id = (SELECT id FROM movies WHERE title = 'Interstellar')
+RETURNING user_id, movie_id, rating;
+
+-- Q: "What does ON DELETE CASCADE do?" - deleting a movie removes its genre links and ratings
+SELECT (SELECT count(*) FROM movie_genres WHERE movie_id = m.id) AS genre_links,
+       (SELECT count(*) FROM ratings WHERE movie_id = m.id)      AS ratings
+FROM movies m WHERE m.title = 'Demo Film';                                                    -- BEFORE: 2 links, 1 rating
+DELETE FROM movies WHERE title = 'Demo Film' RETURNING id, title;
+SELECT count(*) AS demo_film_rows FROM movies WHERE title = 'Demo Film';                      -- AFTER: 0
+SELECT COUNT(*) AS orphan_genre_links FROM movie_genres mg
+WHERE NOT EXISTS (SELECT 1 FROM movies m WHERE m.id = mg.movie_id);                           -- 0: no orphans
+
+DELETE FROM genres WHERE name = 'Documentary' RETURNING id, name;
+DELETE FROM users  WHERE name = 'Demo User'   RETURNING id, name;                              -- cascades to sessions + ratings
+
+-- Q: "Does the history survive the delete?" (rating_audit has no foreign keys on purpose)
+SELECT id, action, user_id, movie_id, old_rating, new_rating FROM rating_audit ORDER BY id DESC LIMIT 6;
+
+-- ---------- 5.4b The same CRUD through the stored PROCEDURES the app uses ----------
+
+-- Q: "Insert / update / delete a user the way the app does"
+SELECT register_user('DemoUser', 'demo123') AS new_user_id;
+SELECT id AS demo_uid FROM users WHERE name = 'DemoUser' \gset
+--   (CALL can't take a subquery, so \gset saves the id in a psql variable)
+CALL set_user_role(:demo_uid, 'admin');                 -- code: db/functions.sql:192, Admin -> role dropdown
+SELECT name, role FROM users WHERE name = 'DemoUser';
+CALL set_user_role(:demo_uid, 'viewer');
+SELECT user_id, name, role, left(token, 12) || '...' AS token FROM login('DemoUser', 'demo123');   -- the Log in button
+SELECT COUNT(*) AS wrong_password_rows FROM login('DemoUser', 'wrongpass');                        -- 0 rows
+SELECT register_user('DemoUser', 'demo123');                         -- EXPECTED ERROR: UNIQUE(name)
+SELECT id AS admin_uid FROM users WHERE name = 'admin' \gset
+CALL set_user_role(:admin_uid, 'viewer');                            -- EXPECTED ERROR: cannot remove the last admin
+DELETE FROM users WHERE name = 'DemoUser' RETURNING id, name;
+
+-- Q: "Insert / update a movie the way the app does" (Admin -> Add movie / Save and re-embed)
+--    code: add_movie db/functions.sql:161, update_movie :175, both call set_movie_genres :144
+CALL add_movie('Demo Movie', 2024, 'Demo Director',
+               'A demo movie added during the DBMS evaluation.', ARRAY['Drama', 'Demo Genre'], NULL, NULL);
+SELECT id, title, year, director, genres, avg_rating, rating_count FROM movie_details WHERE title = 'Demo Movie';
+SELECT * FROM genres WHERE name = 'Demo Genre';                      -- set_movie_genres() created this genre
+SELECT id AS demo_mid FROM movies WHERE title = 'Demo Movie' \gset
+CALL update_movie(:demo_mid, 'Demo Movie', 2025,
+                  'New Director', 'An edited description for the demo movie.', ARRAY['Comedy'], NULL);
+SELECT id, title, year, director, genres FROM movie_details WHERE title = 'Demo Movie';
+CALL add_movie('No Genre Movie', 2020, 'X', 'A movie with no genre at all.', ARRAY[]::text[], NULL, NULL);  -- EXPECTED ERROR: needs a genre
+DELETE FROM movies WHERE title = 'Demo Movie' RETURNING id, title;
+DELETE FROM genres WHERE name = 'Demo Genre';
+
+-- ---------- 5.5 CRUD FROM THE UI -> PROOF IT REACHED THE DATABASE ----------
+-- Do the action in the browser, then run the query under it in psql.
+
+-- Q: "Sign up in the UI - show it in the database"  (Log in -> Sign up tab)
+SELECT id, name, role, left(password_hash, 7) || '...' AS hash_start, created_at FROM users ORDER BY id DESC LIMIT 1;
+
+-- Q: "Rate / change / remove a rating in the UI" (as Aarav: stars on Browse, My Ratings -> Remove)
+SELECT m.title, r.rating, r.rated_at
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') ORDER BY r.rated_at DESC LIMIT 3;
+SELECT a.action, m.title, a.old_rating, a.new_rating, a.db_role, a.changed_at
+FROM rating_audit a LEFT JOIN movies m ON m.id = a.movie_id ORDER BY a.id DESC LIMIT 5;
+
+-- Q: "Add a movie in the UI" (admin -> Admin -> + Add movie) -> newest movie, genres, 384-dim vector
+SELECT m.id, m.title, d.genres, vector_dims(m.embedding) AS dims, (m.embedding::real[])[1:3] AS first_values
+FROM movies m JOIN movie_details d ON d.id = m.id ORDER BY m.id DESC LIMIT 1;
+
+-- Q: "Edit it in the UI" (Edit -> Save and re-embed) -> description and first_values change
+SELECT title, description, (embedding::real[])[1:3] AS first_values FROM movies ORDER BY id DESC LIMIT 1;
+
+-- Q: "Delete it in the UI" (Delete) -> the row is gone (put the movie's title in)
+SELECT count(*) AS still_there FROM movies WHERE title = 'Your Movie Title';
+
+-- Q: "Change a role / delete a user in the UI" (Admin -> Users & roles)
+SELECT id, name, role FROM users ORDER BY role, name;
+
+-- Q: "Change data here and show it in the UI"  - run, refresh Browse, the card shows DEMO, then undo
+--   UPDATE movies SET director = 'DEMO' WHERE title = '3 Idiots';
+--   UPDATE movies SET director = 'Rajkumar Hirani' WHERE title = '3 Idiots';
+
+
+\echo
+\echo =====================================================================
+\echo  6. ADVANCED: TRIGGERS, FUNCTIONS, PROCEDURES, NESTED / CORRELATED QUERIES
+\echo =====================================================================
+
+-- ---------- 6.1 TRIGGERS ----------
+--   code: all three are at the bottom of db/functions.sql
+--     trg_ratings_audit          :236  AFTER INSERT/UPDATE/DELETE ON ratings  -> function audit_rating_change :214
+--     trg_ratings_touch          :252  BEFORE UPDATE OF rating ON ratings     -> function touch_rated_at :242
+--     trg_movies_stale_embedding :273  BEFORE UPDATE OF title, description ON movies -> invalidate_stale_embedding :260
+--   Nothing calls a trigger: PostgreSQL runs it on every matching INSERT/UPDATE/DELETE.
+--   In the app they fire from: the stars (POST /api/ratings, app/api/ratings/route.ts:16),
+--   Remove rating (DELETE /api/ratings, :27), Admin -> Edit movie (update_movie), and any
+--   cascading delete of a movie or user.
+
+-- Q: "List your triggers"
+SELECT tgname AS trigger_name, tgrelid::regclass AS on_table, pg_get_triggerdef(oid) AS definition
+FROM pg_trigger WHERE NOT tgisinternal ORDER BY 2, 1;
+
+-- Q: "Show the table BEFORE and AFTER the trigger" - trg_ratings_audit
+--   Run the whole block: count before, change a rating 3 times, the 3 new log rows after.
+--   Ends with ROLLBACK so the demo data stays the same.
+BEGIN;
+SELECT COUNT(*) AS audit_rows_BEFORE FROM rating_audit;
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT u.id, m.id, 4 FROM users u, movies m WHERE u.name = 'Aarav' AND m.title = 'Arrival';
+UPDATE ratings SET rating = 2
+WHERE user_id = (SELECT id FROM users WHERE name = 'Aarav') AND movie_id = (SELECT id FROM movies WHERE title = 'Arrival');
+DELETE FROM ratings
+WHERE user_id = (SELECT id FROM users WHERE name = 'Aarav') AND movie_id = (SELECT id FROM movies WHERE title = 'Arrival');
+SELECT COUNT(*) AS audit_rows_AFTER FROM rating_audit;
+SELECT a.action, u.name AS user_name, m.title, a.old_rating, a.new_rating, a.db_role
+FROM rating_audit a LEFT JOIN users u ON u.id = a.user_id LEFT JOIN movies m ON m.id = a.movie_id
+ORDER BY a.id DESC LIMIT 3;                                    -- INSERT, UPDATE and DELETE rows appeared
+ROLLBACK;
+
+-- Q: "Before and after" - trg_ratings_touch moves rated_at only when the rating really changes
+BEGIN;
+SELECT m.title, r.rating, r.rated_at AS rated_at_BEFORE
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') ORDER BY r.movie_id LIMIT 1;
+UPDATE ratings SET rating = CASE WHEN rating = 5 THEN 4 ELSE rating + 1 END
+WHERE user_id = (SELECT id FROM users WHERE name = 'Aarav')
+  AND movie_id = (SELECT MIN(movie_id) FROM ratings WHERE user_id = (SELECT id FROM users WHERE name = 'Aarav'));
+SELECT m.title, r.rating, r.rated_at AS rated_at_AFTER
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') ORDER BY r.movie_id LIMIT 1;
+ROLLBACK;
+
+-- Q: "Does re-saving the same value log a change?" - no, the trigger skips it
+BEGIN;
+SELECT COUNT(*) AS audit_rows_before FROM rating_audit;
+UPDATE ratings SET rating = rating
+WHERE (user_id, movie_id) = (SELECT user_id, movie_id FROM ratings ORDER BY user_id, movie_id LIMIT 1);
+SELECT COUNT(*) AS audit_rows_after FROM rating_audit;
+ROLLBACK;
+
+-- Q: "Before and after" - trg_movies_stale_embedding clears the vector when the text changes
+BEGIN;
+SELECT title, vector_dims(embedding) AS dims_BEFORE FROM movies WHERE title = 'Inception';
+UPDATE movies SET description = description || ' (edited)' WHERE title = 'Inception';
+SELECT title, embedding IS NULL AS vector_was_cleared_AFTER FROM movies WHERE title = 'Inception';
+ROLLBACK;
+SELECT title, vector_dims(embedding) AS dims_after_rollback FROM movies WHERE title = 'Inception';
+
+-- Q: "Show what the trigger wrote" (nobody INSERTs into rating_audit directly; UI: Admin -> Activity log)
+SELECT a.id, a.action, u.name AS user_name, m.title, a.old_rating, a.new_rating, a.db_role,
+       to_char(a.changed_at, 'HH24:MI:SS') AS at
+FROM rating_audit a
+LEFT JOIN users u  ON u.id = a.user_id
+LEFT JOIN movies m ON m.id = a.movie_id
+ORDER BY a.id DESC
+LIMIT 5;
+
+-- ---------- 6.2 FUNCTIONS AND PROCEDURES ----------
+--   code: db/functions.sql.  Who calls each one: guide part 10 (table "where each object is").
+
+-- Q: "List your functions and procedures" (kind f = function, p = procedure)
+SELECT p.proname AS name, p.prokind AS kind, pg_get_function_arguments(p.oid) AS arguments,
+       CASE WHEN p.prosecdef THEN 'SECURITY DEFINER' ELSE '' END AS security
+FROM pg_proc p
+WHERE p.pronamespace = 'public'::regnamespace
+  AND p.proname IN ('bayesian_score','register_user','login','logout','current_app_user','whoami',
+                    'similarity_trail','set_movie_genres','add_movie','update_movie','set_user_role',
+                    'audit_rating_change','touch_rated_at','invalidate_stale_embedding')
+ORDER BY kind, name;
+
+-- Q: "Run a function" - scalar: one lucky 5-star vs many 4.5s   (db/functions.sql:28, used by For You cold start)
+SELECT bayesian_score(5.0, 1) AS one_lucky_5_star, bayesian_score(4.5, 20) AS many_4_5_ratings;
+
+-- Q: "Run a function that returns a table" - recursive CTE inside   (db/functions.sql:113, Movie page -> Similarity trail)
+SELECT * FROM similarity_trail((SELECT id FROM movies WHERE title = 'Interstellar'), 6);
+
+-- Q: "Show the source of a function"
+SELECT pg_get_functiondef('bayesian_score(numeric,int,numeric,int)'::regprocedure);
+
+-- Q: "Run a procedure" - see 5.4b (add_movie, update_movie, set_user_role are all CALLed there)
+
+-- ---------- 6.3 ADVANCED QUERIES ----------
+
+-- Q: "Show a join" - 3 tables: Sci-Fi movies after 2010
+SELECT m.title, m.year
+FROM movies m
+JOIN movie_genres mg ON mg.movie_id = m.id
+JOIN genres g        ON g.id = mg.genre_id
+WHERE g.name = 'Sci-Fi' AND m.year > 2010
+ORDER BY m.year DESC;
+
+-- Q: "Show a NESTED query" - users who never rated a Horror movie (inner query runs once)
+SELECT u.name, u.role
+FROM users u
+WHERE u.id NOT IN (
+  SELECT r.user_id
+  FROM ratings r
+  JOIN movie_genres mg ON mg.movie_id = r.movie_id
+  JOIN genres g        ON g.id = mg.genre_id
+  WHERE g.name = 'Horror'
+)
+ORDER BY u.name;
+
+-- Q: "Show a CORRELATED query" - movies 0.5+ above their genre's average
+--    (the inner query uses g.id from the outer row, so it runs again for every row)
+SELECT d.title, g.name AS genre, d.avg_rating,
+       (SELECT ROUND(AVG(r2.rating), 2)
+        FROM ratings r2 JOIN movie_genres mg2 ON mg2.movie_id = r2.movie_id
+        WHERE mg2.genre_id = g.id) AS genre_avg
+FROM movie_details d
+JOIN movie_genres mg ON mg.movie_id = d.id
+JOIN genres g        ON g.id = mg.genre_id
+WHERE d.rating_count >= 2
+  AND d.avg_rating >= 0.5 + (SELECT AVG(r2.rating)
+                             FROM ratings r2 JOIN movie_genres mg2 ON mg2.movie_id = r2.movie_id
+                             WHERE mg2.genre_id = g.id)
+ORDER BY d.avg_rating DESC, d.title
+LIMIT 12;
+
+-- Q: "Show an aggregate with GROUP BY / HAVING" (+ a stored function) - top rated
+SELECT m.title, COUNT(*) AS ratings, ROUND(AVG(r.rating), 2) AS avg,
+       bayesian_score(AVG(r.rating), COUNT(*)::int) AS score
+FROM ratings r JOIN movies m ON m.id = r.movie_id
+GROUP BY m.id
+HAVING COUNT(*) >= 2
+ORDER BY score DESC
+LIMIT 10;
+
+-- Q: "Users with how many movies each rated" (LEFT JOIN keeps users with 0 ratings)
+SELECT u.name, u.role, COUNT(r.movie_id) AS movies_rated, ROUND(AVG(r.rating), 2) AS avg_given
+FROM users u LEFT JOIN ratings r ON r.user_id = u.id
+GROUP BY u.id ORDER BY u.role, u.name;
+
+-- Q: "Movies per genre"
+SELECT g.name AS genre, COUNT(mg.movie_id) AS movies
+FROM genres g LEFT JOIN movie_genres mg ON mg.genre_id = g.id
+GROUP BY g.name
+ORDER BY movies DESC;
+
+-- Q: "Show a RECURSIVE query" (written out; the same as similarity_trail())
+WITH RECURSIVE trail (step, id, path, embedding, distance) AS (
+  SELECT 0, m.id, ARRAY[m.id], m.embedding, NULL::float8
+  FROM movies m WHERE m.title = 'Interstellar'
+  UNION ALL
+  SELECT t.step + 1, nxt.id, t.path || nxt.id, nxt.embedding, nxt.distance
+  FROM trail t
+  CROSS JOIN LATERAL (
+    SELECT m.id, m.embedding, m.embedding <=> t.embedding AS distance
+    FROM movies m
+    WHERE m.id <> ALL (t.path) AND m.embedding IS NOT NULL
+    ORDER BY m.embedding <=> t.embedding
+    LIMIT 1
+  ) nxt
+  WHERE t.step < 5
+)
+SELECT t.step, mv.title, ROUND((1 - t.distance)::numeric, 3) AS similarity
+FROM trail t JOIN movies mv ON mv.id = t.id
+ORDER BY t.step;
+
+-- Q: "Show your most complex query" - HYBRID SQL + VECTOR: recommendations for Aarav
+--    (CTE + EXISTS + NOT EXISTS + vector kNN; the app's version is SQL.recommend lib/queries.ts:127)
+WITH taste AS (
+  SELECT AVG(m.embedding) AS v
+  FROM ratings r JOIN movies m ON m.id = r.movie_id
+  WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') AND r.rating >= 4
+)
+SELECT m.title,
+       ROUND((1 - (m.embedding <=> (SELECT v FROM taste)))::numeric, 3) AS match
+FROM movies m
+WHERE NOT EXISTS (SELECT 1 FROM ratings r
+                  WHERE r.movie_id = m.id AND r.user_id = (SELECT id FROM users WHERE name = 'Aarav'))
+  AND EXISTS (SELECT 1 FROM movie_genres mg JOIN genres g ON g.id = mg.genre_id
+              WHERE mg.movie_id = m.id AND g.name = 'Thriller')
+ORDER BY m.embedding <=> (SELECT v FROM taste)
+LIMIT 10;
+
+
+\echo
+\echo =====================================================================
+\echo  7. VECTOR QUERIES (pgvector) - create, read, update, delete
+\echo     code: column movies.embedding vector(384) db/schema.sql; HNSW index db/indexes.sql:12
+\echo =====================================================================
+
+-- Q: "Show a stored vector"
+SELECT title, vector_dims(embedding) AS dims, ROUND(vector_norm(embedding)::numeric, 3) AS norm,
+       left(embedding::text, 50) || '...' AS first_values
+FROM movies WHERE title = 'Interstellar';
+
+-- Q: "Show a similarity search" - k nearest neighbours by cosine distance (<=>)
+--    (Movie page -> More like this runs this; SQL.similar lib/queries.ts:106)
+SELECT title,
+       ROUND((1 - (embedding <=> (SELECT embedding FROM movies WHERE title = 'Interstellar')))::numeric, 3) AS similarity
+FROM movies
+WHERE title <> 'Interstellar'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Interstellar')
+LIMIT 6;
+
+-- Q: "Is the vector index used?" (forced, because the table is small)
+SET enable_seqscan = off;
+EXPLAIN (COSTS OFF)
+SELECT title FROM movies
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Interstellar')
+LIMIT 5;
+RESET enable_seqscan;
+
+-- Q: "Vector CREATE" - a movie with a vector (borrowing WALL-E's, since psql can't run the model)
+INSERT INTO movies (title, year, director, description, embedding)
+SELECT 'Demo Robot Movie', 2024, 'Demo', 'A small robot looks for love in space.', embedding
+FROM movies WHERE title = 'WALL-E'
+RETURNING id, title, vector_dims(embedding) AS dims;
+
+SELECT title, ROUND((1 - (embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Robot Movie')))::numeric, 3) AS similarity
+FROM movies WHERE title <> 'Demo Robot Movie'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Robot Movie')
+LIMIT 5;                                                                     -- BEFORE: robot / space films
+
+-- Q: "Vector UPDATE" - give it a horror movie's vector: the neighbours change
+UPDATE movies SET embedding = (SELECT embedding FROM movies WHERE title = 'The Shining')
+WHERE title = 'Demo Robot Movie';
+
+SELECT title, ROUND((1 - (embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Robot Movie')))::numeric, 3) AS similarity
+FROM movies WHERE title <> 'Demo Robot Movie'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Robot Movie')
+LIMIT 5;                                                                     -- AFTER: horror films
+
+-- Q: "What stops a bad vector?" - it must have exactly 384 numbers
+UPDATE movies SET embedding = '[1,2,3]' WHERE title = 'Demo Robot Movie';   -- EXPECTED ERROR: expected 384 dimensions
+
+-- Q: "Vector DELETE" - the row, its vector and its index entry go together
+DELETE FROM movies WHERE title = 'Demo Robot Movie' RETURNING id, title;
+
+-- Every movie should have a vector (0 rows)
+SELECT id, title FROM movies WHERE embedding IS NULL;
+
+-- Q: "Search by meaning" - only the UI can embed new text (the model runs in Node):
+--   Browse -> "Meaning · Vector" -> type   lonely robot falls in love
+
+
+\echo
+\echo =====================================================================
+\echo  8. ROLES AND SECURITY (GRANTs, row-level security)   code: db/security.sql
+\echo =====================================================================
+
+-- Q: "What database roles do you have?"
+SELECT rolname, rolcanlogin, rolinherit FROM pg_roles WHERE rolname LIKE 'cinesense%' ORDER BY rolname;
+SELECT r.rolname AS role, m.rolname AS member_of
+FROM pg_auth_members am
+JOIN pg_roles r ON r.oid = am.member
+JOIN pg_roles m ON m.oid = am.roleid
+WHERE r.rolname LIKE 'cinesense%'
+ORDER BY 1, 2;
+
+-- Q: "Can a viewer read the users table?" - no
+SET ROLE cinesense_viewer;
+SELECT * FROM users;                       -- EXPECTED ERROR: permission denied
+RESET ROLE;
+
+-- Q: "Can an admin read passwords?" - no (column-level GRANT)
+SET ROLE cinesense_admin;
+SELECT id, name, role FROM users LIMIT 3;
+SELECT password_hash FROM users LIMIT 1;   -- EXPECTED ERROR: permission denied
+RESET ROLE;
+
+-- Q: "Can a viewer change someone else's rating?" - no (row-level security)
+BEGIN;
+SET LOCAL ROLE cinesense_viewer;
+INSERT INTO ratings (user_id, movie_id, rating) VALUES (2, 1, 5);   -- EXPECTED ERROR: row-level security
+ROLLBACK;
+
+SELECT policyname, cmd, roles, qual AS using_expr, with_check
+FROM pg_policies WHERE tablename = 'ratings' ORDER BY policyname;
+
+
+\echo
+\echo =====================================================================
+\echo  9. MODIFICATION QUESTIONS - ready answers. Run ONLY the one she asks for.
+\echo     Each one undoes itself (or has an UNDO line).
+\echo =====================================================================
+
+-- M1. Q: "Add a new column with a constraint" (runtime of a movie)
+ALTER TABLE movies ADD COLUMN runtime_min SMALLINT CHECK (runtime_min BETWEEN 1 AND 600);
+UPDATE movies SET runtime_min = 169 WHERE title = 'Interstellar';
+UPDATE movies SET runtime_min = 148 WHERE title = 'Inception';
+SELECT title, runtime_min FROM movies WHERE runtime_min IS NOT NULL;
+UPDATE movies SET runtime_min = 0 WHERE title = 'Moon';                 -- EXPECTED ERROR: CHECK
+--   UNDO:
+ALTER TABLE movies DROP COLUMN runtime_min;
+--   (to also show it on the website: guide part 13 has the 4-step recipe)
+
+-- M2. Q: "Add a constraint to an existing table"
+ALTER TABLE movies ADD CONSTRAINT movies_title_not_blank CHECK (length(trim(title)) > 0);
+INSERT INTO movies (title, year, description) VALUES ('   ', 2020, 'Blank title test.');   -- EXPECTED ERROR
+--   UNDO:
+ALTER TABLE movies DROP CONSTRAINT movies_title_not_blank;
+
+-- M3. Q: "Write a new trigger" - log every deleted movie into a new table (AFTER DELETE)
+CREATE TABLE movie_delete_log (
+  id         SERIAL PRIMARY KEY,
+  movie_id   INT,
+  title      TEXT,
+  deleted_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE FUNCTION log_movie_delete() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO movie_delete_log (movie_id, title) VALUES (OLD.id, OLD.title);
+  RETURN OLD;
+END $$;
+CREATE TRIGGER trg_movie_delete_log
+AFTER DELETE ON movies
+FOR EACH ROW EXECUTE FUNCTION log_movie_delete();
+
+INSERT INTO movies (title, year, description) VALUES ('Trigger Test Movie', 2024, 'Will be deleted.');
+SELECT * FROM movie_delete_log;                                          -- BEFORE: empty
+DELETE FROM movies WHERE title = 'Trigger Test Movie';
+SELECT * FROM movie_delete_log;                                          -- AFTER: the trigger wrote this row
+--   UNDO:
+DROP TRIGGER trg_movie_delete_log ON movies;
+DROP FUNCTION log_movie_delete();
+DROP TABLE movie_delete_log;
+
+-- M4. Q: "Write a BEFORE trigger that blocks something" - no ratings for unreleased movies
+CREATE FUNCTION no_future_ratings() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF (SELECT year FROM movies WHERE id = NEW.movie_id) > EXTRACT(YEAR FROM now()) THEN
+    RAISE EXCEPTION 'Cannot rate a movie that has not been released yet.';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER trg_no_future_ratings
+BEFORE INSERT ON ratings
+FOR EACH ROW EXECUTE FUNCTION no_future_ratings();
+
+BEGIN;
+INSERT INTO movies (title, year, description) VALUES ('Future Movie', 2099, 'Not out yet, test only.');
+INSERT INTO ratings (user_id, movie_id, rating)
+SELECT 1, id, 5 FROM movies WHERE title = 'Future Movie';               -- EXPECTED ERROR from the trigger
+ROLLBACK;
+--   UNDO:
+DROP TRIGGER trg_no_future_ratings ON ratings;
+DROP FUNCTION no_future_ratings();
+
+-- M5. Q: "Write a new function" - average rating of a genre
+CREATE FUNCTION genre_avg_rating(p_genre text) RETURNS numeric LANGUAGE sql STABLE AS $$
+  SELECT ROUND(AVG(r.rating), 2)
+  FROM ratings r
+  JOIN movie_genres mg ON mg.movie_id = r.movie_id
+  JOIN genres g        ON g.id = mg.genre_id
+  WHERE g.name = p_genre
+$$;
+SELECT genre_avg_rating('Sci-Fi') AS scifi, genre_avg_rating('Horror') AS horror;
+SELECT name, genre_avg_rating(name) AS avg FROM genres ORDER BY avg DESC NULLS LAST;
+--   UNDO:
+DROP FUNCTION genre_avg_rating(text);
+
+-- M6. Q: "Write a function that returns a table" - a user's top N movies
+CREATE FUNCTION user_top_movies(p_user text, p_n int DEFAULT 3)
+RETURNS TABLE (title text, rating smallint) LANGUAGE sql STABLE AS $$
+  SELECT m.title::text, r.rating
+  FROM ratings r
+  JOIN users u  ON u.id = r.user_id
+  JOIN movies m ON m.id = r.movie_id
+  WHERE u.name = p_user
+  ORDER BY r.rating DESC, m.title
+  LIMIT p_n
+$$;
+SELECT * FROM user_top_movies('Aarav', 5);
+--   UNDO:
+DROP FUNCTION user_top_movies(text, int);
+
+-- M7. Q: "Write a new procedure" - add a genre to an existing movie
+CREATE PROCEDURE add_genre_to_movie(p_title text, p_genre text) LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO genres (name) VALUES (p_genre) ON CONFLICT (name) DO NOTHING;
+  INSERT INTO movie_genres (movie_id, genre_id)
+  SELECT m.id, g.id FROM movies m, genres g WHERE m.title = p_title AND g.name = p_genre
+  ON CONFLICT DO NOTHING;
+END $$;
+BEGIN;
+CALL add_genre_to_movie('Interstellar', 'Mystery');
+SELECT title, genres FROM movie_details WHERE title = 'Interstellar';
+ROLLBACK;
+--   UNDO:
+DROP PROCEDURE add_genre_to_movie(text, text);
+
+-- M8. Q: "Write a new query"
+-- Directors ranked by average rating (join + group by + having)
+SELECT m.director, COUNT(DISTINCT m.id) AS movies, ROUND(AVG(r.rating), 2) AS avg_rating
+FROM movies m JOIN ratings r ON r.movie_id = m.id
+GROUP BY m.director
+HAVING COUNT(r.rating) >= 3
+ORDER BY avg_rating DESC
+LIMIT 10;
+
+-- Users who rated more movies than the average user (nested subquery in HAVING)
+SELECT u.name, COUNT(*) AS rated
+FROM users u JOIN ratings r ON r.user_id = u.id
+GROUP BY u.name
+HAVING COUNT(*) > (SELECT AVG(c) FROM (SELECT COUNT(*) AS c FROM ratings GROUP BY user_id) x)
+ORDER BY rated DESC;
+
+-- Movies nobody has rated (NOT EXISTS)
+SELECT m.title FROM movies m
+WHERE NOT EXISTS (SELECT 1 FROM ratings r WHERE r.movie_id = m.id)
+ORDER BY m.title;
+
+-- Highest-rated movie in each genre (window function)
+SELECT genre, title, avg_rating FROM (
+  SELECT g.name AS genre, d.title, d.avg_rating,
+         RANK() OVER (PARTITION BY g.name ORDER BY d.avg_rating DESC NULLS LAST) AS rk
+  FROM movie_details d
+  JOIN movie_genres mg ON mg.movie_id = d.id
+  JOIN genres g        ON g.id = mg.genre_id
+) t
+WHERE rk = 1
+ORDER BY genre;
+
+-- M9. Q: "Change the vector query" - Euclidean distance (<->) instead of cosine, top 3
+SELECT title, ROUND((embedding <-> (SELECT embedding FROM movies WHERE title = 'Interstellar'))::numeric, 3) AS l2_distance
+FROM movies WHERE title <> 'Interstellar'
+ORDER BY embedding <-> (SELECT embedding FROM movies WHERE title = 'Interstellar')
+LIMIT 3;
+
+-- M10. Q: "Add an index and show it is used"
+CREATE INDEX idx_movies_director ON movies (director);
+SET enable_seqscan = off;
+EXPLAIN (COSTS OFF) SELECT * FROM movies WHERE director = 'Christopher Nolan';
+RESET enable_seqscan;
+--   UNDO:
+DROP INDEX idx_movies_director;
+
+-- M11. Q: "Give a role a new privilege, then take it away"
+GRANT SELECT ON rating_audit TO cinesense_viewer;
+SET ROLE cinesense_viewer;
+SELECT COUNT(*) AS viewer_can_now_read_audit FROM rating_audit;
+RESET ROLE;
+REVOKE SELECT ON rating_audit FROM cinesense_viewer;
+
+-- M12. Q: "Create a view"
+CREATE VIEW user_stats AS
+SELECT u.name, u.role, COUNT(r.movie_id) AS rated, ROUND(AVG(r.rating), 2) AS avg_given
+FROM users u LEFT JOIN ratings r ON r.user_id = u.id
+GROUP BY u.id;
+SELECT * FROM user_stats ORDER BY rated DESC;
+--   UNDO:
+DROP VIEW user_stats;
+
+
+-- ---------- CLEANUP (only if you stopped part-way; `npm run seed` resets everything) ----------
+DELETE FROM movies WHERE title IN ('Demo Film', 'Demo Movie', 'Demo Robot Movie', 'Trigger Test Movie');
+DELETE FROM genres WHERE name IN ('Documentary', 'Demo Genre');
+DELETE FROM users  WHERE name IN ('Demo User', 'DemoUser');
+DELETE FROM rating_audit WHERE user_id NOT IN (SELECT id FROM users);   -- log rows of the deleted demo users
+
+\echo
+\echo ===== DONE =====
