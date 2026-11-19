@@ -2,6 +2,10 @@
 --  CINESENSE - EVERY DEMO COMMAND, IN THE TEACHER'S ORDER (PostgreSQL 16 + pgvector)
 --  File: demo/DEMO_COMMANDS.txt        What to say for each part: demo/DEMO_GUIDE.pdf
 --
+--  THREE KINDS OF LINES - you never have to type anything yourself:
+--   * SQL blocks (no -- in front)  -> copy the block, paste into the PSQL window, press Enter.
+--   * lines starting  --  PS>      -> copy everything AFTER "PS> " into a POWERSHELL window.
+--   * lines starting  --  TYPE:    -> the exact text to type/paste into the website.
 --  Each block starts with   -- Q: <the question she asks>   so you know when to run it.
 --  Lines marked  -- EXPECTED ERROR  fail ON PURPOSE (they prove a constraint / rule works).
 --  Lines starting with \ are psql commands, not SQL.
@@ -10,16 +14,40 @@
 -- =====================================================================================
 --
 --  ---------------- 0. START EVERYTHING (do this before she comes) ----------------
---  1. Open Docker Desktop and wait until the engine is running.
---  2. Double-click  cinesense\start-cinesense.bat   (starts the database and the app)
---     or by hand:   docker start cinesense-db
---                   cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"
---                   npm run dev                          -> open http://localhost:3000
---  3. Open psql in a 2nd window:   docker exec -it cinesense-db psql -U postgres -d moviedb
---  4. Reset the sample data ONCE, before the demo (never during it):   npm run seed
---  5. Do one "Meaning" search on Browse (e.g. robot) so the vector model is loaded.
---  Logins for the UI:  admin / admin123   (admin)      Aarav / viewer123   (viewer)
---  Leave psql: \q
+--  Step 1 - start the database AND the website (PowerShell window #1; keep it open):
+--  PS> & "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense\start-cinesense.bat"
+--      (or double-click start-cinesense.bat. It opens Docker Desktop if needed, starts the
+--       database container cinesense-db, then the website. Wait until it prints  Ready )
+--      By hand instead, in PowerShell window #1:
+--  PS> docker start cinesense-db
+--  PS> cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"; npm run dev
+--
+--  Step 2 - open a SECOND PowerShell window and go to the project folder (use it for every PS> line below):
+--  PS> cd "C:\Users\Prithvi\Prithvi\PES\Sem 5\DBMS MiniProject\cinesense"
+--
+--  Step 3 - reset the sample data ONCE, before the demo (NEVER during it; it empties the activity log):
+--  PS> npm run seed
+--
+--  Step 4 - load the vector model now so the first Meaning search during the demo is instant
+--           (the first call takes ~10 s; it should print movie titles such as WALL-E):
+--  PS> (Invoke-RestMethod "http://localhost:3000/api/movies?mode=semantic&q=robot").items | Select-Object -First 5 title
+--
+--  Step 5 - open the website, this file, the printed diagrams and the code:
+--  PS> Start-Process "http://localhost:3000"
+--  PS> notepad.exe demo\DEMO_COMMANDS.txt
+--  PS> Start-Process docs\diagrams.pdf
+--  PS> code .
+--
+--  Step 6 - open psql in a THIRD PowerShell window (every SQL block below is pasted here):
+--  PS> docker exec -it cinesense-db psql -U postgres -d moviedb
+--      The prompt becomes  moviedb=#   To leave psql:  \q
+--
+--  Step 7 - make sure nobody is logged in on the website: if the top right shows a name,
+--           click  Log out .
+--
+--  Logins for the website (Log in, top right):
+--  TYPE:  admin    /  admin123      (admin)
+--  TYPE:  Aarav    /  viewer123     (viewer)
 --
 --  ---------------- Q: "WHERE IS THE CONNECTION STRING?" ----------------
 --  File cinesense\.env.local  (git-ignored; the template in GitHub is .env.example):
@@ -29,15 +57,17 @@
 --  The website uses DATABASE_URL in lib/db.ts line 9:
 --     new Pool({ connectionString: process.env.DATABASE_URL })
 --  DATABASE_OWNER_URL (owner login "postgres") is used only by  npm run seed.
---  Show it: open .env.local in Notepad/VS Code, then lib/db.ts line 9.  (guide part 11)
+--  Show it (opens each file at the right line in VS Code):
+--  PS> code -g .env.local:1
+--  PS> code -g lib/db.ts:9
+--  PS> code -g .env.example:1          (the copy that is on GitHub, same lines)
 --
---  HOW TO RUN: open this file in Notepad, copy ONE block, paste it into psql.
---  (Whole file at once, from the cinesense folder:
---     docker cp demo/DEMO_COMMANDS.txt cinesense-db:/tmp/demo.sql
---     docker exec -it cinesense-db psql -U postgres -d moviedb -f /tmp/demo.sql )
+--  WHOLE FILE AT ONCE (only for testing, from the cinesense folder):
+--  PS> docker cp demo/DEMO_COMMANDS.txt cinesense-db:/tmp/demo.sql
+--  PS> docker exec -it cinesense-db psql -U postgres -d moviedb -f /tmp/demo.sql
 --
 --  ---------------- QUESTION -> SECTION ----------------
---   "Explain the problem statement"                       -> no command (guide part 1)
+--   "Explain the problem statement"                       -> 1
 --   "Show the ER diagram / mapping"                       -> 2   (and the printed sheet)
 --   "How many strong / weak entities? attribute types?"   -> 3
 --   "Show the tables" / "Show create table for X"         -> 4   (4.3 = create table)
@@ -48,12 +78,11 @@
 --   "Show functions / procedures"                         -> 6.2
 --   "Show nested / correlated / advanced queries"         -> 6.3
 --   "Show the vector queries"                             -> 7
---   "Why did you use this?" (justification)               -> no command (guide part 9)
+--   "Why did you use this?" (justification)               -> 10
 --   "Show roles / security / RBAC"                        -> 8
 --   "Change something now" (modification)                 -> 9   (M1-M12)
 --   "Where is the connection string?"                     -> 0 (just above)
---   "Where is X in the code?"                             -> the  -- code:  lines next to
---                                                            each command, and guide part 11
+--   "Where is X in the code?"                             -> 11  (one  code -g  line per item)
 -- =====================================================================================
 
 \pset pager off
@@ -63,19 +92,40 @@
 
 \echo
 \echo =====================================================================
-\echo  1. PROBLEM STATEMENT  (no command - say it in ~15 seconds, guide part 1)
+\echo  1. PROBLEM STATEMENT  (say it in ~15 seconds, then show it)
 \echo =====================================================================
--- "Keyword search only finds exact words, so users miss movies that are similar in
---  meaning. CineSense keeps users, movies, genres and ratings in SQL tables and a
---  384-number meaning vector per movie in pgvector, and combines both to recommend."
--- To show it working: Browse -> switch to "Meaning · Vector" -> type
---   lonely robot falls in love      -> WALL-E and Her appear (keyword search finds 0)
+-- SAY: "Keyword search only finds exact words, so users miss movies that are similar in
+--       meaning. CineSense keeps users, movies, genres and ratings in SQL tables and a
+--       384-number meaning vector per movie in pgvector, and combines both to recommend."
+--
+-- SHOW IT in the website (Browse page, http://localhost:3000):
+--   1. click the  Keyword · SQL  button, click the search box, paste:
+--  TYPE:  lonely robot falls in love
+--      -> "No movies match"
+--   2. click the  Meaning · Vector  button (same text stays in the box)
+--      -> WALL-E and Her appear, although the words don't match
+--
+-- SAME THING FROM POWERSHELL (if the browser is slow):
+--  PS> (Invoke-RestMethod "http://localhost:3000/api/movies?mode=keyword&q=lonely%20robot%20falls%20in%20love").items.Count
+--  PS> (Invoke-RestMethod "http://localhost:3000/api/movies?mode=semantic&q=lonely%20robot%20falls%20in%20love").items | Select-Object -First 5 title
+--
+-- SAME THING IN PSQL - the keyword search finds nothing:
+SELECT title FROM movie_details
+WHERE title ILIKE '%lonely robot falls in love%' OR director ILIKE '%lonely robot falls in love%'
+   OR description ILIKE '%lonely robot falls in love%';                       -- 0 rows (same as the website's keyword search)
 
 
 \echo
 \echo =====================================================================
 \echo  2. ER DIAGRAM AND THE UI MAPPING  (show the printed sheet: docs/diagrams.pdf page 1)
 \echo =====================================================================
+-- Open the diagrams on screen (page 1 ER diagram, page 2 relational schema):
+--  PS> Start-Process docs\diagrams.pdf
+-- SAY: rectangles = entities, ovals = attributes (underlined = key, dashed = derived),
+--      diamonds = relationships, double line = total participation.
+--      RATES (USER M:N MOVIE) -> table ratings      = the stars in the UI
+--      CLASSIFIED_AS (MOVIE M:N GENRE) -> movie_genres = the genre chips / pills
+--      HAS (USER 1:N SESSION) -> sessions.user_id   = logging in
 
 -- Q: "Which table is behind each entity / relationship?" (rows in each one)
 SELECT 'users  (entity USER)'                AS what, COUNT(*) FROM users        UNION ALL
@@ -130,11 +180,27 @@ WHERE m.title = 'Interstellar';
 \d rating_audit
 
 -- 4.3 Q: "Show CREATE TABLE for <table>"
---   PostgreSQL has no SHOW CREATE TABLE. Run this in POWERSHELL (not psql), change the name:
---     docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t movies
---   (users / genres / movie_genres / ratings / sessions / rating_audit work the same way)
---   Or open db/schema.sql and show the CREATE TABLE there (users line 13, genres 21,
---   movies 26, movie_genres 37, ratings 45, sessions 54, rating_audit 64, view 78).
+--   PostgreSQL has no SHOW CREATE TABLE. pg_dump prints the exact CREATE TABLE (with its
+--   constraints, indexes, triggers and policies). Copy the line for the table she names
+--   into POWERSHELL (not psql):
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t users
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t movies
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t genres
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t movie_genres
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t ratings
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t sessions
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t rating_audit
+--  PS> docker exec cinesense-db pg_dump -U postgres -d moviedb --schema-only -t movie_details
+--   Then show the CREATE TABLE you wrote, in db/schema.sql (opens at that line):
+--  PS> code -g db/schema.sql:13        (users)
+--  PS> code -g db/schema.sql:26        (movies)
+--  PS> code -g db/schema.sql:21        (genres)
+--  PS> code -g db/schema.sql:37        (movie_genres)
+--  PS> code -g db/schema.sql:45        (ratings)
+--  PS> code -g db/schema.sql:54        (sessions)
+--  PS> code -g db/schema.sql:64        (rating_audit)
+--  PS> code -g db/schema.sql:78        (view movie_details)
+--   SAY: "\d is PostgreSQL's describe; pg_dump --schema-only regenerates the CREATE statement."
 --   Inside psql, \d <table> (4.2) shows the same information.
 
 -- 4.4 Q: "Show the constraints"   contype: p = PRIMARY KEY, f = FOREIGN KEY, u = UNIQUE, c = CHECK
@@ -295,34 +361,77 @@ DELETE FROM movies WHERE title = 'Demo Movie' RETURNING id, title;
 DELETE FROM genres WHERE name = 'Demo Genre';
 
 -- ---------- 5.5 CRUD FROM THE UI -> PROOF IT REACHED THE DATABASE ----------
--- Do the action in the browser, then run the query under it in psql.
+-- Do each step in the browser (http://localhost:3000), then paste the SQL under it into psql.
+-- Optional "before": paste the SQL first, do the step, paste it again ("after").
 
--- Q: "Sign up in the UI - show it in the database"  (Log in -> Sign up tab)
+-- STEP 1  Q: "Sign up in the UI - show it in the database"  (CREATE users)
+--   click  Log in  (top right) -> click the  Sign up  tab -> fill in -> click  Create account
+--  TYPE:  name      DemoStudent
+--  TYPE:  password  demo123
 SELECT id, name, role, left(password_hash, 7) || '...' AS hash_start, created_at FROM users ORDER BY id DESC LIMIT 1;
+--   -> DemoStudent, viewer, a bcrypt hash ($2a$...): the password itself is never stored
 
--- Q: "Rate / change / remove a rating in the UI" (as Aarav: stars on Browse, My Ratings -> Remove)
+-- STEP 2  Q: "Rate a movie in the UI"  (CREATE ratings + the audit trigger)
+--   click  Log out , click  Log in :
+--  TYPE:  name  Aarav      password  viewer123
+--   on Browse (Keyword · SQL), paste into the search box:
+--  TYPE:  Arrival
+--   click the 4th star on the Arrival card
 SELECT m.title, r.rating, r.rated_at
 FROM ratings r JOIN movies m ON m.id = r.movie_id
 WHERE r.user_id = (SELECT id FROM users WHERE name = 'Aarav') ORDER BY r.rated_at DESC LIMIT 3;
 SELECT a.action, m.title, a.old_rating, a.new_rating, a.db_role, a.changed_at
 FROM rating_audit a LEFT JOIN movies m ON m.id = a.movie_id ORDER BY a.id DESC LIMIT 5;
+--   -> Arrival 4; the log shows INSERT by role cinesense_viewer
 
--- Q: "Add a movie in the UI" (admin -> Admin -> + Add movie) -> newest movie, genres, 384-dim vector
+-- STEP 3  Q: "Change it in the UI"  (UPDATE ratings): click the 2nd star on the same card,
+--         then paste the two queries of STEP 2 again -> rating 2, new rated_at, log row UPDATE 4 -> 2
+
+-- STEP 4  Q: "Delete it in the UI"  (DELETE ratings): click  My Ratings  (top) -> next to
+--         Arrival click  Remove , then paste the two queries of STEP 2 again
+--         -> Arrival is gone from ratings; the log shows DELETE
+
+-- STEP 5  Q: "Add a movie in the UI"  (CREATE movies + genres + vector)
+--   click  Log out , click  Log in :
+--  TYPE:  name  admin      password  admin123
+--   click  Admin  (top) -> click  + Add movie  -> fill in the form:
+--  TYPE:  Title        Demo Night
+--  TYPE:  Year         2024
+--  TYPE:  Director     Demo Director
+--  TYPE:  Description  A lonely robot and a young astronaut drift through space looking for a new home.
+--   click the genre chips  Sci-Fi  and  Drama  -> click  Add movie
 SELECT m.id, m.title, d.genres, vector_dims(m.embedding) AS dims, (m.embedding::real[])[1:3] AS first_values
-FROM movies m JOIN movie_details d ON d.id = m.id ORDER BY m.id DESC LIMIT 1;
+FROM movies m JOIN movie_details d ON d.id = m.id WHERE m.title = 'Demo Night';
+--   -> Demo Night, {Drama,Sci-Fi}, dims 384 (the website computed the vector)
+SELECT title, ROUND((1 - (embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Night')))::numeric, 3) AS similarity
+FROM movies WHERE title <> 'Demo Night'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Night') LIMIT 5;
+--   -> its nearest movies are space / robot films
 
--- Q: "Edit it in the UI" (Edit -> Save and re-embed) -> description and first_values change
-SELECT title, description, (embedding::real[])[1:3] AS first_values FROM movies ORDER BY id DESC LIMIT 1;
+-- STEP 6  Q: "Edit it in the UI"  (UPDATE movies + re-embed): on the Demo Night row click  Edit ,
+--   select all text in the Description box and paste:
+--  TYPE:  A haunted hotel traps a writer and his family during a snowy winter.
+--   click  Save and re-embed
+SELECT title, description, (embedding::real[])[1:3] AS first_values FROM movies WHERE title = 'Demo Night';
+SELECT title FROM movies WHERE title <> 'Demo Night'
+ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Night') LIMIT 5;
+--   -> new description, different first_values, and now horror films are the nearest
 
--- Q: "Delete it in the UI" (Delete) -> the row is gone (put the movie's title in)
-SELECT count(*) AS still_there FROM movies WHERE title = 'Your Movie Title';
+-- STEP 7  Q: "Delete it in the UI"  (DELETE movies, cascade): on the Demo Night row click  Delete  -> OK
+SELECT count(*) AS still_there FROM movies WHERE title = 'Demo Night';      -- 0
 
--- Q: "Change a role / delete a user in the UI" (Admin -> Users & roles)
-SELECT id, name, role FROM users ORDER BY role, name;
+-- STEP 8  Q: "Change a role / delete a user in the UI"  (UPDATE / DELETE users)
+--   Admin -> click the  Users & roles  tab -> DemoStudent's role dropdown -> choose  admin
+SELECT id, name, role FROM users WHERE name = 'DemoStudent';                -- role admin
+--   set DemoStudent back to  viewer . Then try admin's own dropdown -> viewer
+--   -> the website shows "Cannot remove the last admin." (the set_user_role procedure refused)
+--   finally click  Delete  on the DemoStudent row -> OK
+SELECT count(*) AS demostudent_rows FROM users WHERE name = 'DemoStudent';  -- 0
 
--- Q: "Change data here and show it in the UI"  - run, refresh Browse, the card shows DEMO, then undo
---   UPDATE movies SET director = 'DEMO' WHERE title = '3 Idiots';
---   UPDATE movies SET director = 'Rajkumar Hirani' WHERE title = '3 Idiots';
+-- Q: "Change data here and show it in the UI" - run, refresh Browse (F5), the 3 Idiots card shows DEMO
+UPDATE movies SET director = 'DEMO' WHERE title = '3 Idiots';
+--   then put it back:
+UPDATE movies SET director = 'Rajkumar Hirani' WHERE title = '3 Idiots';
 
 
 \echo
@@ -339,6 +448,14 @@ SELECT id, name, role FROM users ORDER BY role, name;
 --   In the app they fire from: the stars (POST /api/ratings, app/api/ratings/route.ts:16),
 --   Remove rating (DELETE /api/ratings, :27), Admin -> Edit movie (update_movie), and any
 --   cascading delete of a movie or user.
+--   Show them in the code (each opens at the line):
+--  PS> code -g db/functions.sql:236     (trg_ratings_audit; its function starts at 214)
+--  PS> code -g db/functions.sql:252     (trg_ratings_touch; function at 242)
+--  PS> code -g db/functions.sql:273     (trg_movies_stale_embedding; function at 260)
+--  PS> code -g lib/queries.ts:50        (the upsert the stars run, which fires them)
+--  PS> code -g app/api/ratings/route.ts:16
+--   Show their effect in the website: log in as admin -> Admin -> Activity log tab
+--   (every row there was written by trg_ratings_audit).
 
 -- Q: "List your triggers"
 SELECT tgname AS trigger_name, tgrelid::regclass AS on_table, pg_get_triggerdef(oid) AS definition
@@ -481,6 +598,36 @@ FROM genres g LEFT JOIN movie_genres mg ON mg.genre_id = g.id
 GROUP BY g.name
 ORDER BY movies DESC;
 
+-- Q: "Where are your VIEWS?"   one view: movie_details (movies + genres array + avg_rating + rating_count)
+SELECT table_name AS view_name FROM information_schema.views WHERE table_schema = 'public';
+SELECT pg_get_viewdef('movie_details'::regclass, true);          -- the view's SQL, read back from PostgreSQL
+--  PS> code -g db/schema.sql:78        (CREATE VIEW movie_details)
+--   Read by the website in lib/queries.ts: keywordSearch 32, movieById 43, userRatings 59,
+--   popular 75, semanticSearch 87, similar 106, recommend 127, adminMovies 160, movieText 181
+--  PS> code -g lib/queries.ts:34       (FROM movie_details d - the Browse keyword search)
+--   Why a view: avg_rating / rating_count are DERIVED, so they are computed, never stored (stays BCNF).
+
+-- Q: "Where are your CTEs (WITH ... AS)?"
+--   WITH nn AS (...)          lib/queries.ts:88  semanticSearch (Meaning search)
+--                             lib/queries.ts:107 similar (More like this)
+--                             lib/queries.ts:128 recommend (For You)
+--     -> the CTE does the vector kNN on movies (uses the HNSW index), then joins only the
+--        few winners to the movie_details view
+--   WITH RECURSIVE trail ...  db/functions.sql:117  similarity_trail() (Movie page -> Similarity trail)
+--   WITH taste AS (...)       lib/lab.ts:145  Query Lab "Hybrid"; written out below in this section
+--  PS> code -g lib/queries.ts:88
+--  PS> code -g lib/queries.ts:128
+--  PS> code -g db/functions.sql:117
+-- A short CTE to run live (top 3 genres by average rating):
+WITH genre_avg AS (
+  SELECT g.name, ROUND(AVG(r.rating)::numeric, 2) AS avg_rating, COUNT(*) AS ratings
+  FROM genres g
+  JOIN movie_genres mg ON mg.genre_id = g.id
+  JOIN ratings r       ON r.movie_id  = mg.movie_id
+  GROUP BY g.name
+)
+SELECT * FROM genre_avg ORDER BY avg_rating DESC LIMIT 3;
+
 -- Q: "Show a RECURSIVE query" (written out; the same as similarity_trail())
 WITH RECURSIVE trail (step, id, path, embedding, distance) AS (
   SELECT 0, m.id, ARRAY[m.id], m.embedding, NULL::float8
@@ -576,14 +723,38 @@ DELETE FROM movies WHERE title = 'Demo Robot Movie' RETURNING id, title;
 -- Every movie should have a vector (0 rows)
 SELECT id, title FROM movies WHERE embedding IS NULL;
 
--- Q: "Search by meaning" - only the UI can embed new text (the model runs in Node):
---   Browse -> "Meaning · Vector" -> type   lonely robot falls in love
+-- Q: "Search by meaning" - only the website can turn new text into a vector (the model runs in Node).
+--   Browse -> click  Meaning · Vector  -> paste into the search box:
+--  TYPE:  lonely robot falls in love
+--   -> WALL-E and Her.   Try also:
+--  TYPE:  a heist inside someone's dreams
+--  TYPE:  space survival
+--   Same from PowerShell:
+--  PS> (Invoke-RestMethod "http://localhost:3000/api/movies?mode=semantic&q=lonely%20robot%20falls%20in%20love").items | Select-Object -First 5 title
+--
+-- Q: "More like this" in the website: open any movie (click its card) -> scroll to
+--   More like this (vector kNN) and tick  Same genre only  (vector + SQL genre filter);
+--   Similarity trail below it is the recursive function similarity_trail().
+--   Show the code:
+--  PS> code -g lib/queries.ts:87        (semanticSearch - Meaning search)
+--  PS> code -g lib/queries.ts:106       (similar - More like this)
+--  PS> code -g lib/queries.ts:127       (recommend - For You, hybrid SQL + vector)
+--  PS> code -g lib/embeddings.ts:30     (embed() - text -> 384 numbers)
+--  PS> code -g db/indexes.sql:12        (the HNSW index)
 
 
 \echo
 \echo =====================================================================
 \echo  8. ROLES AND SECURITY (GRANTs, row-level security)   code: db/security.sql
 \echo =====================================================================
+-- In the website: log in as a viewer, then open the admin page:
+--  TYPE:  name  Aarav      password  viewer123
+--  PS> Start-Process "http://localhost:3000/admin"
+--   -> "Admins only". As admin, Query Lab (http://localhost:3000/lab) -> "Role privileges"
+--      and "Row-level security policies" read these rules live from PostgreSQL.
+--  PS> code -g db/security.sql:39       (GRANTs per role)
+--  PS> code -g db/security.sql:63       (row-level security policies)
+--  PS> code -g lib/db.ts:39             (withSession: SET LOCAL ROLE for every request)
 
 -- Q: "What database roles do you have?"
 SELECT rolname, rolcanlogin, rolinherit FROM pg_roles WHERE rolname LIKE 'cinesense%' ORDER BY rolname;
@@ -629,7 +800,7 @@ SELECT title, runtime_min FROM movies WHERE runtime_min IS NOT NULL;
 UPDATE movies SET runtime_min = 0 WHERE title = 'Moon';                 -- EXPECTED ERROR: CHECK
 --   UNDO:
 ALTER TABLE movies DROP COLUMN runtime_min;
---   (to also show it on the website: guide part 13 has the 4-step recipe)
+--   (to also show it on the website: M1-UI at the very end of this file)
 
 -- M2. Q: "Add a constraint to an existing table"
 ALTER TABLE movies ADD CONSTRAINT movies_title_not_blank CHECK (length(trim(title)) > 0);
@@ -789,11 +960,110 @@ SELECT * FROM user_stats ORDER BY rated DESC;
 DROP VIEW user_stats;
 
 
+\echo
+\echo =====================================================================
+\echo  10. JUSTIFICATION  (no command - say it; full table in guide part 9)
+\echo =====================================================================
+-- SAY:
+--  * PostgreSQL: the data is structured and related (keys, constraints, joins, transactions),
+--    and it has functions, procedures, triggers, recursive CTEs, roles and row-level security.
+--  * pgvector: search by meaning needs vector similarity; it lives INSIDE the same database, so
+--    one query joins ratings, filters genres and ranks by similarity in one transaction, and
+--    deleting a movie deletes its vector. A separate vector DB (Pinecone, Redis) would need syncing.
+--  * Why vectors at all: keyword search for "lonely robot falls in love" finds 0 (section 1);
+--    vector search finds WALL-E and Her.
+--  * all-MiniLM-L6-v2: small (~90 MB), runs locally, free, no API key; 384 numbers per movie.
+--  * Next.js: required; React pages and the server API in one project; the browser never
+--    touches the database.  * pgcrypto: bcrypt passwords inside the database.
+--  * HNSW index: no training step, fast, high recall on small data.
+
+
+\echo
+\echo =====================================================================
+\echo  11. "WHERE IS IT IN THE CODE?"  - each line opens VS Code at that line (PowerShell)
+\echo     Button -> code details for every page: guide part 11.  DB objects: guide part 10.
+\echo =====================================================================
+-- Database (DDL and database code)
+--  PS> code -g db/schema.sql:13         tables (users 13, genres 21, movies 26, movie_genres 37, ratings 45, sessions 54, rating_audit 64), view 78
+--  PS> code -g db/schema.sql:78         VIEW movie_details (read by lib/queries.ts 34, 45, 62, 78, 100, 120, 143, 164, 181)
+--  PS> code -g lib/queries.ts:88        CTEs: WITH nn AS at 88 (Meaning), 107 (More like this), 128 (For You)
+--  PS> code -g db/functions.sql:117     recursive CTE: WITH RECURSIVE trail inside similarity_trail()
+--  PS> code -g db/indexes.sql:12        HNSW vector index (B-tree indexes above it)
+--  PS> code -g db/functions.sql:28      functions: bayesian_score 28, register_user 40, login 59, current_app_user 82, whoami 92, logout 99, similarity_trail 113
+--  PS> code -g db/functions.sql:144     procedures: set_movie_genres 144, add_movie 161, update_movie 175, set_user_role 192
+--  PS> code -g db/functions.sql:214     triggers: audit 214/236, touch 242/252, stale embedding 260/273
+--  PS> code -g db/security.sql:14       roles 14, GRANTs 36, row-level security 63
+--  PS> code -g scripts/seed.ts:78       the seed runs schema 78, indexes 145, functions 146, security 147
+-- Connection and request path
+--  PS> code -g .env.local:1             connection strings
+--  PS> code -g lib/db.ts:9              the pool that uses DATABASE_URL
+--  PS> code -g lib/db.ts:39             withSession(): BEGIN, SET LOCAL ROLE, whoami(), COMMIT
+--  PS> code -g lib/http.ts:50           route(): login / role check; DB error -> message (lines 28-33)
+--  PS> code -g lib/queries.ts:8         EVERY SQL statement the website runs
+-- Buttons (page -> API -> SQL)
+--  PS> code -g components/StarRating.tsx:23          the stars' onClick
+--  PS> code -g lib/useRate.ts:24                     stars on Browse -> POST /api/ratings
+--  PS> code -g app/api/ratings/route.ts:9            POST (upsert) and DELETE (line 23) of a rating
+--  PS> code -g app/movie/[id]/page.tsx:118           Remove rating button (handler at 64)
+--  PS> code -g app/my-ratings/page.tsx:65            My Ratings -> Remove (handler at 41)
+--  PS> code -g app/login/page.tsx:59                 Log in / Create account form (submit at 17)
+--  PS> code -g components/UserProvider.tsx:43        login (43), register (51), logout (58) API calls
+--  PS> code -g components/Nav.tsx:63                 Log out button
+--  PS> code -g app/page.tsx:87                       Keyword / Meaning buttons (search request at 44)
+--  PS> code -g app/api/movies/route.ts:12            GET search (keyword or vector) and POST add movie (49)
+--  PS> code -g app/admin/page.tsx:281                + Add movie button; Save at 264, save() at 130
+--  PS> code -g app/admin/page.tsx:323                Edit 323, Re-embed 324 (reembed() 163), Delete 327 (remove() 177)
+--  PS> code -g app/api/movies/[id]/route.ts:23       PATCH edit / re-embed, DELETE movie (48)
+--  PS> code -g app/admin/page.tsx:417                role dropdown (setRole() 363), Delete user 429
+--  PS> code -g app/api/users/[id]/route.ts:8         PATCH role -> set_user_role, DELETE user (21)
+--  PS> code -g app/admin/page.tsx:448                Activity log tab -> GET /api/audit
+--  PS> code -g app/recommendations/page.tsx:39       For You -> GET /api/recommendations
+--  PS> code -g app/api/recommendations/route.ts:15   taste vector -> SQL.recommend / SQL.popular
+
+
 -- ---------- CLEANUP (only if you stopped part-way; `npm run seed` resets everything) ----------
-DELETE FROM movies WHERE title IN ('Demo Film', 'Demo Movie', 'Demo Robot Movie', 'Trigger Test Movie');
+DELETE FROM movies WHERE title IN ('Demo Film', 'Demo Movie', 'Demo Robot Movie', 'Trigger Test Movie', 'Demo Night');
 DELETE FROM genres WHERE name IN ('Documentary', 'Demo Genre');
-DELETE FROM users  WHERE name IN ('Demo User', 'DemoUser');
+DELETE FROM users  WHERE name IN ('Demo User', 'DemoUser', 'DemoStudent');
 DELETE FROM rating_audit WHERE user_id NOT IN (SELECT id FROM users);   -- log rows of the deleted demo users
+
+
+-- =====================================================================================
+-- M1-UI. Q: "Add a column AND show it on the website" (runtime on each movie card). Tested.
+--   Run ONLY when she asks for a change visible in the UI. Undo is at the end of the block.
+-- =====================================================================================
+-- (a) psql: add the column and some values
+ALTER TABLE movies ADD COLUMN runtime_min SMALLINT CHECK (runtime_min BETWEEN 1 AND 600);
+UPDATE movies SET runtime_min = 169 WHERE title = 'Interstellar';
+UPDATE movies SET runtime_min = 148 WHERE title = 'Inception';
+-- (b) psql: add it to the view the website reads (new columns go at the end)
+CREATE OR REPLACE VIEW movie_details AS
+SELECT m.id, m.title, m.year, m.director, m.description,
+       COALESCE(g.genres, '{}')         AS genres,
+       ROUND(AVG(r.rating)::numeric, 2) AS avg_rating,
+       COUNT(r.rating)::int             AS rating_count,
+       m.runtime_min
+FROM movies m
+LEFT JOIN LATERAL (
+  SELECT array_agg(gn.name ORDER BY gn.name) AS genres
+  FROM movie_genres mg JOIN genres gn ON gn.id = mg.genre_id
+  WHERE mg.movie_id = m.id
+) g ON true
+LEFT JOIN ratings r ON r.movie_id = m.id
+GROUP BY m.id, g.genres;
+-- (c) code: open lib/types.ts at the Movie type
+--  PS> code -g lib/types.ts:10
+--     add this line just below   my_rating: number | null;
+--  TYPE:    runtime_min?: number | null;
+-- (d) code: open the movie card
+--  PS> code -g components/MovieCard.tsx:35
+--     replace the line   {movie.year} · {movie.director}   with:
+--  TYPE:            {movie.year} · {movie.director}{movie.runtime_min ? ` · ${movie.runtime_min} min` : ""}
+--     save both files (Ctrl+S). The website reloads by itself.
+-- (e) website: search  Interstellar  on Browse -> the card reads "2014 · Christopher Nolan · 169 min"
+-- UNDO (PowerShell, in the cinesense folder):
+--  PS> git checkout -- lib/types.ts components/MovieCard.tsx
+--  PS> npm run seed
 
 \echo
 \echo ===== DONE =====
