@@ -133,9 +133,12 @@ WHERE title ILIKE '%lonely robot falls in love%' OR director ILIKE '%lonely robo
 --  PS> Start-Process docs\diagrams.pdf
 -- SAY: rectangles = entities, ovals = attributes (underlined = key, dashed = derived),
 --      diamonds = relationships, double line = total participation.
---      RATES (USER M:N MOVIE) -> table ratings      = the stars in the UI
+--      RATES (USER M:N MOVIE) -> table ratings      = the stars in the UI (partial both sides)
 --      CLASSIFIED_AS (MOVIE M:N GENRE) -> movie_genres = the genre chips / pills
---      HAS (USER 1:N SESSION) -> sessions.user_id   = logging in
+--          (MOVIE total: every movie needs a genre, enforced by set_movie_genres; GENRE partial)
+--      HAS (USER 1:N SESSION) -> sessions.user_id   = logging in (SESSION total)
+-- Q: "Can a movie have no genre?" -> no; the add_movie procedure refuses (db/functions.sql:149):
+CALL add_movie('No Genre Movie', 2020, 'X', 'A movie with no genre at all.', ARRAY[]::text[], NULL, NULL);  -- EXPECTED ERROR: needs a genre
 
 -- Q: "Which table is behind each entity / relationship?" (rows in each one)
 SELECT 'users  (entity USER)'                AS what, COUNT(*) FROM users        UNION ALL

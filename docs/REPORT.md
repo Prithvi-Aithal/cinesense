@@ -52,7 +52,7 @@ Browser ──> Next.js pages (React) ──> Next.js API routes ─────
 
 ![ER diagram, Chen notation](er-diagram.png)
 
-The M:N relationships RATES and CLASSIFIED_AS become the `ratings` and `movie_genres` tables, with RATES carrying the `rating` and `rated_at` attributes. The 1:N relationship HAS becomes the `sessions.user_id` foreign key, and every session must belong to a user (total participation). `avg_rating` and `rating_count` are derived in the `movie_details` view rather than stored.
+The M:N relationships RATES and CLASSIFIED_AS become the `ratings` and `movie_genres` tables, with RATES carrying the `rating` and `rated_at` attributes. The 1:N relationship HAS becomes the `sessions.user_id` foreign key, and every session must belong to a user (total participation). MOVIE also participates totally in CLASSIFIED_AS: every movie has at least one genre, a rule the `set_movie_genres` procedure enforces because a foreign key cannot require a movie to appear in `movie_genres`. GENRE is partial, since a genre may have no movies. `avg_rating` and `rating_count` are derived in the `movie_details` view rather than stored.
 
 **Relational schema**, as implemented in `db/schema.sql`. Each table's columns are shown in a row, primary keys are underlined, and each arrow points from a foreign key to the primary key it references:
 
