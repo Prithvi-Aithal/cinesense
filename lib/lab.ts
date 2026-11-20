@@ -196,7 +196,7 @@ LIMIT 15`,
     title: "Role privileges (GRANTs per database role)",
     kind: "RBAC",
     explain:
-      "What each database role may do on each table, read from PostgreSQL's own privilege checks. The app logs in as cinesense_app (no privileges) and switches to one of these roles per request. Column-level grants count (users: admins can read some columns, never password_hash).",
+      "What each database role may do on each table, read from PostgreSQL's own privilege checks. The app logs in as cinesense_app (no privileges) and switches to one of these roles per request. Column-level grants count (users: admins can read some columns, never password_hash; only the super admin can update or delete users).",
     sql: `SELECT c.relname AS object,
        (SELECT string_agg(p, ' ') FROM unnest(ARRAY['SELECT','INSERT','UPDATE']) p
          WHERE has_any_column_privilege('cinesense_anon', c.oid, p)) AS anon,
@@ -206,6 +206,9 @@ LIMIT 15`,
        (SELECT string_agg(p, ' ') FROM unnest(ARRAY['SELECT','INSERT','UPDATE']) p
          WHERE has_any_column_privilege('cinesense_admin', c.oid, p))
          || CASE WHEN has_table_privilege('cinesense_admin', c.oid, 'DELETE') THEN ' DELETE' ELSE '' END AS admin,
+       (SELECT string_agg(p, ' ') FROM unnest(ARRAY['SELECT','INSERT','UPDATE']) p
+         WHERE has_any_column_privilege('cinesense_superadmin', c.oid, p))
+         || CASE WHEN has_table_privilege('cinesense_superadmin', c.oid, 'DELETE') THEN ' DELETE' ELSE '' END AS superadmin,
        c.relrowsecurity AS row_level_security
 FROM pg_class c
 JOIN pg_namespace n ON n.oid = c.relnamespace AND n.nspname = 'public'

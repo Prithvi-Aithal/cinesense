@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useUser } from "./UserProvider";
-import type { Role } from "@/lib/types";
+import { isAdmin, type Role } from "@/lib/types";
 
 // Which links each role sees. The pages and the API enforce the same rules.
 const links: { href: string; label: string; role?: Role }[] = [
@@ -19,7 +19,7 @@ export default function Nav() {
   const router = useRouter();
   const { user, loading, logout } = useUser();
 
-  const visible = links.filter((l) => !l.role || (user && (l.role === "viewer" || user.role === "admin")));
+  const visible = links.filter((l) => !l.role || (user && (l.role === "viewer" || isAdmin(user.role))));
 
   async function signOut() {
     await logout();
@@ -55,10 +55,10 @@ export default function Nav() {
               </span>
               <span
                 className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  user.role === "admin" ? "bg-gold text-ink" : "border border-line text-muted"
+                  isAdmin(user.role) ? "bg-gold text-ink" : "border border-line text-muted"
                 }`}
               >
-                {user.role}
+                {user.role === "superadmin" ? "super admin" : user.role}
               </span>
               <button onClick={signOut} className="text-muted underline-offset-2 hover:text-text hover:underline">
                 Log out

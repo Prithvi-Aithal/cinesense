@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useUser } from "./UserProvider";
-import type { Role } from "@/lib/types";
+import { isAdmin, type Role } from "@/lib/types";
 
 /**
  * Front-end gate for pages that need a signed-in user (or an admin). It only decides what to show:
@@ -20,7 +20,7 @@ export default function RequireRole({ role, children }: { role: Role; children: 
   }, [loading, user, router, pathname]);
 
   if (loading || !user) return <p className="py-16 text-center text-muted">Loading…</p>;
-  if (role === "admin" && user.role !== "admin") {
+  if (role !== "viewer" && !isAdmin(user.role)) {
     return (
       <div className="py-16 text-center">
         <p className="text-2xl">Admins only</p>

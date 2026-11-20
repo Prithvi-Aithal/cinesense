@@ -14,7 +14,10 @@ export type Movie = {
   score?: string | null;
 };
 
-export type Role = "admin" | "viewer";
+export type Role = "superadmin" | "admin" | "viewer";
+
+/** Regular admins and the super admin both manage the catalog. */
+export const isAdmin = (role: Role | null | undefined) => role === "admin" || role === "superadmin";
 export type User = { id: number; name: string; role: Role; rating_count: number };
 
 export type TrailStep = { step: number; id: number; title: string; similarity: string | null };

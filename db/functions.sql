@@ -188,15 +188,15 @@ BEGIN
 END
 $$;
 
--- Promote or demote a user, refusing to remove the last admin.
+-- Promote a viewer to admin or demote an admin to viewer. Only the super admin may call it.
 CREATE PROCEDURE set_user_role(p_user int, p_role text)
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF p_role = 'viewer'
-     AND (SELECT u.role FROM users u WHERE u.id = p_user) = 'admin'
-     AND (SELECT count(*) FROM users u WHERE u.role = 'admin') = 1 THEN
-    RAISE EXCEPTION 'Cannot remove the last admin.' USING ERRCODE = '22023';
+  -- EXECUTE is granted to cinesense_superadmin only (security.sql). Nobody can be made super admin, and
+  -- the trg_users_protect_superadmin trigger refuses any change to the super admin's own role.
+  IF p_role IS NULL OR p_role NOT IN ('admin', 'viewer') THEN
+    RAISE EXCEPTION 'Role must be admin or viewer.' USING ERRCODE = '22023';
   END IF;
   UPDATE users SET role = p_role WHERE id = p_user;
   IF NOT FOUND THEN
@@ -274,3 +274,26 @@ CREATE TRIGGER trg_movies_stale_embedding
 BEFORE UPDATE OF title, description ON movies
 FOR EACH ROW
 EXECUTE FUNCTION invalidate_stale_embedding();
+
+DROP FUNCTION IF EXISTS protect_superadmin() CASCADE;
+-- 4. The super admin is permanent: their role can't be changed and their account can't be deleted.
+--    A BEFORE trigger, so the change is refused before it happens, from the website or from psql alike.
+CREATE FUNCTION protect_superadmin()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.role = 'superadmin' AND (TG_OP = 'DELETE' OR NEW.role IS DISTINCT FROM 'superadmin') THEN
+    RAISE EXCEPTION 'The super admin can''t be demoted or deleted.' USING ERRCODE = '22023';
+  END IF;
+  IF TG_OP = 'DELETE' THEN
+    RETURN OLD;
+  END IF;
+  RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER trg_users_protect_superadmin
+BEFORE UPDATE OF role OR DELETE ON users
+FOR EACH ROW
+EXECUTE FUNCTION protect_superadmin();

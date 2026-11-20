@@ -14,3 +14,6 @@ CREATE INDEX IF NOT EXISTS idx_movies_embedding_hnsw
   WITH (m = 16, ef_construction = 64);
 
 ANALYZE;
+
+-- At most one super admin: a partial unique index over the rows WHERE role = 'superadmin'.
+CREATE UNIQUE INDEX IF NOT EXISTS users_one_superadmin ON users (role) WHERE role = 'superadmin';

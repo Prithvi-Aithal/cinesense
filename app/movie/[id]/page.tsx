@@ -8,7 +8,7 @@ import StarRating from "@/components/StarRating";
 import QueryPanel from "@/components/QueryPanel";
 import { useUser } from "@/components/UserProvider";
 import { api } from "@/lib/api";
-import type { Movie, TrailStep } from "@/lib/types";
+import { isAdmin, type Movie, type TrailStep } from "@/lib/types";
 
 export default function MoviePage() {
   const { id } = useParams<{ id: string }>();
@@ -78,7 +78,7 @@ export default function MoviePage() {
         <Link href="/" className="text-sm text-muted hover:text-gold">
           ← Back to browse
         </Link>
-        {user?.role === "admin" && (
+        {isAdmin(user?.role) && (
           <Link href={`/admin?edit=${movie.id}`} className="text-sm text-gold underline">
             Edit in admin
           </Link>

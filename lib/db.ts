@@ -19,13 +19,13 @@ if (!globalForPg.pgPool) {
 
 if (process.env.NODE_ENV !== "production") globalForPg.pgPool = pool;
 
-export type Role = "admin" | "viewer";
+export type Role = "superadmin" | "admin" | "viewer";
 export type Actor = { id: number; name: string; role: Role } | null;
 export type Query = <T = Record<string, unknown>>(text: string, params?: unknown[]) => Promise<T[]>;
 
 // Database role for each kind of caller (see db/security.sql). A fixed map, never user input,
 // because SET ROLE can't take a bind parameter.
-const DB_ROLE = { anon: "cinesense_anon", viewer: "cinesense_viewer", admin: "cinesense_admin" } as const;
+const DB_ROLE = { anon: "cinesense_anon", viewer: "cinesense_viewer", admin: "cinesense_admin", superadmin: "cinesense_superadmin" } as const;
 
 /**
  * Run fn inside one transaction as the caller's database role.

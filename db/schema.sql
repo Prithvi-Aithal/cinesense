@@ -14,7 +14,7 @@ CREATE TABLE users (
   id             SERIAL PRIMARY KEY,
   name           VARCHAR(60) NOT NULL UNIQUE,
   password_hash  TEXT NOT NULL,
-  role           VARCHAR(10) NOT NULL DEFAULT 'viewer' CHECK (role IN ('admin', 'viewer')),
+  role           VARCHAR(10) NOT NULL DEFAULT 'viewer' CHECK (role IN ('superadmin', 'admin', 'viewer')),
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

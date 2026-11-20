@@ -18,7 +18,7 @@
 | **Cold start** | viewer, admin | Users with no 4★+ ratings get top-rated movies | SQL `GROUP BY` scored by the `bayesian_score()` stored function |
 | **My Ratings** `/my-ratings` | viewer, admin | Change or remove your ratings | Upsert (`ON CONFLICT`) and `DELETE`, limited to your rows by row-level security; triggers log each change |
 | **Admin → Movies & vectors** `/admin` | admin | Add, edit, re-embed and delete movies; see every vector's size and length | **Vector create / read / update / delete** through the `add_movie` and `update_movie` procedures |
-| **Admin → Users & roles** | admin | Promote, demote and delete accounts | `set_user_role` procedure (refuses to remove the last admin) |
+| **Admin → Users & roles** | super admin | Promote, demote and delete accounts | `set_user_role` procedure, granted only to `cinesense_superadmin`; a trigger stops anyone demoting or deleting the super admin |
 | **Admin → Activity log** | admin | Every rating insert, change and delete | Written only by the `trg_ratings_audit` **trigger** |
 | **Query Lab** `/lab` | admin | Joins, nested, correlated and recursive queries, functions, the trigger log, role privileges and RLS policies, with live results and `EXPLAIN ANALYZE` | Read-only transactions, optional `SET LOCAL enable_seqscan = off` |
 
@@ -30,10 +30,11 @@ Every page has a **"Show the query behind this"** panel with the exact SQL the A
 
 | Name | Password | Role |
 |---|---|---|
-| `admin` | `admin123` | admin |
+| `admin` | `admin123` | super admin (the only one): everything, including users and roles |
+| `editor` | `editor123` | admin: movies, vectors and the activity log; no user management |
 | `Aarav`, `Meera`, `Kabir`, `Zoya`, `Rohan`, `Isha`, `Dev`, `Ananya`, `Vikram`, `Sara`, `Neel`, `Tara`, `New Viewer` | `viewer123` | viewer |
 
-Anyone can sign up; new accounts are viewers. Access is enforced in three layers: the UI hides what you can't use, each API route checks your role, and **PostgreSQL itself** refuses anything else. The app connects as `cinesense_app`, a database login with no privileges of its own, and every request switches to `cinesense_anon`, `cinesense_viewer` or `cinesense_admin` with `SET LOCAL ROLE`. GRANTs (including column-level ones) and row-level security policies in [`db/security.sql`](db/security.sql) decide what each role can do. See [docs/REPORT.md](docs/REPORT.md#8-authentication-and-role-based-access-control).
+Anyone can sign up; new accounts are viewers. The super admin can promote a viewer to admin, but nobody can become a second super admin. Access is enforced in three layers: the UI hides what you can't use, each API route checks your role, and **PostgreSQL itself** refuses anything else. The app connects as `cinesense_app`, a database login with no privileges of its own, and every request switches to `cinesense_anon`, `cinesense_viewer`, `cinesense_admin` or `cinesense_superadmin` with `SET LOCAL ROLE`. GRANTs (including column-level ones) and row-level security policies in [`db/security.sql`](db/security.sql) decide what each role can do. See [docs/REPORT.md](docs/REPORT.md#8-authentication-and-role-based-access-control).
 
 ## Stack
 
@@ -67,7 +68,7 @@ Browser ──> Next.js pages ──> Next.js API routes ──> PostgreSQL 16 (
    npm install
    npm run seed
    ```
-   The seed drops and recreates the tables, loads 105 movies, 12 genres, 14 users and 216 ratings (18 per sample viewer, generated deterministically from each user's liked and disliked genres in `data/users.json`), builds the indexes **after** the data is in, then creates the functions, triggers, roles and privileges. Embeddings ship precomputed in `data/embeddings.json`, so seeding needs no model download.
+   The seed drops and recreates the tables, loads 105 movies, 12 genres, 15 users and 216 ratings (18 per sample viewer, generated deterministically from each user's liked and disliked genres in `data/users.json`), builds the indexes **after** the data is in, then creates the functions, triggers, roles and privileges. Embeddings ship precomputed in `data/embeddings.json`, so seeding needs no model download.
 4. **Start.** Run `npm run dev`, open http://localhost:3000 and log in with a demo account.
    The first *Meaning* search, or the first movie an admin adds, downloads the model (~90 MB) into `./.models`; after that it is instant. If the download fails, search falls back to keyword mode and shows a notice, and new movies are saved without a vector until re-embedded.
 
@@ -96,7 +97,7 @@ app/
   login/page.tsx               Log in / Sign up
   recommendations/page.tsx     For You                         (viewer)
   my-ratings/page.tsx          Rating history                  (viewer)
-  admin/page.tsx               Movies & vectors, Users & roles, Activity log   (admin)
+  admin/page.tsx               Movies & vectors, Activity log (admin); Users & roles (super admin)
   lab/page.tsx                 Query Lab (EXPLAIN ANALYZE)     (admin)
   api/
     auth/{login,register,logout,me}   POST / GET  session cookie handling

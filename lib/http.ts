@@ -49,7 +49,7 @@ type Segment<P> = { params: Promise<P> };
  */
 export function route<P = Record<string, never>>(
   fn: (req: NextRequest, ctx: Ctx, params: P) => Promise<Response>,
-  opts: { role?: "viewer" | "admin"; readOnly?: boolean } = {}
+  opts: { role?: "viewer" | "admin" | "superadmin"; readOnly?: boolean } = {}
 ) {
   return handle(async (req: NextRequest, segment?: Segment<P>) => {
     const params = segment?.params ? await segment.params : ({} as P);
@@ -58,8 +58,11 @@ export function route<P = Record<string, never>>(
       token,
       async (q, actor) => {
         if (opts.role && !actor) return NextResponse.json({ error: "Please log in." }, { status: 401 });
-        if (opts.role === "admin" && actor?.role !== "admin") {
+        if (opts.role === "admin" && actor?.role !== "admin" && actor?.role !== "superadmin") {
           return NextResponse.json({ error: "Admins only." }, { status: 403 });
+        }
+        if (opts.role === "superadmin" && actor?.role !== "superadmin") {
+          return NextResponse.json({ error: "Only the super admin can manage users." }, { status: 403 });
         }
         return fn(req, { q, actor, token }, params);
       },

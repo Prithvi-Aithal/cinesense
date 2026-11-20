@@ -4,7 +4,7 @@ import { badRequest, body, intParam, route } from "@/lib/http";
 
 type P = { id: string };
 
-// PATCH /api/users/:id {role}  (admin) -> set_user_role procedure, which refuses to remove the last admin
+// PATCH /api/users/:id {role}  (super admin only) -> set_user_role procedure; the super admin's own role can't change
 export const PATCH = route<P>(
   async (req, { q }, params) => {
     const id = intParam(params.id);
@@ -14,10 +14,10 @@ export const PATCH = route<P>(
     await q(SQL.setUserRole, [id, role]);
     return NextResponse.json({ ok: true, query: SQL.setUserRole });
   },
-  { role: "admin" }
+  { role: "superadmin" }
 );
 
-// DELETE /api/users/:id  (admin) -> ratings and sessions go with it (ON DELETE CASCADE)
+// DELETE /api/users/:id  (super admin only) -> ratings and sessions go with it (ON DELETE CASCADE)
 export const DELETE = route<P>(
   async (_req, { q, actor }, params) => {
     const id = intParam(params.id);
@@ -27,5 +27,5 @@ export const DELETE = route<P>(
     if (!gone) return NextResponse.json({ error: "User not found." }, { status: 404 });
     return NextResponse.json({ ok: true, query: SQL.deleteUser });
   },
-  { role: "admin" }
+  { role: "superadmin" }
 );

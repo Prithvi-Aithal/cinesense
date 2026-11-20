@@ -19,7 +19,7 @@ type AdminMovie = {
   dims: number | null;
   norm: string | null;
 };
-type AdminUser = { id: number; name: string; role: "admin" | "viewer"; created_at: string; rating_count: number; active_sessions: number };
+type AdminUser = { id: number; name: string; role: "superadmin" | "admin" | "viewer"; created_at: string; rating_count: number; active_sessions: number };
 type AuditRow = {
   id: number;
   action: "INSERT" | "UPDATE" | "DELETE";
@@ -51,16 +51,20 @@ function Admin() {
   const params = useSearchParams();
   const editId = Number(params.get("edit")) || null;
   const [tab, setTab] = useState<Tab>("movies");
+  const { user } = useUser();
+  // Users & roles is for the super admin only (the API and the database refuse it for anyone else).
+  const tabs = TABS.filter((t) => t !== "users" || user?.role === "superadmin");
 
   return (
     <div>
       <h1 className="mt-4 font-[family-name:var(--font-display)] text-4xl">Admin</h1>
       <p className="mt-2 max-w-3xl text-muted">
-        Only the <code className="text-gold">cinesense_admin</code> database role may change the catalog and accounts. Every
-        action here runs as that role, and PostgreSQL refuses it for anyone else.
+        Only the <code className="text-gold">cinesense_admin</code> database role may change the catalog, and only the super
+        admin (<code className="text-gold">cinesense_superadmin</code>) may change accounts. Every action here runs as your
+        database role, and PostgreSQL refuses it for anyone else.
       </p>
       <div className="mt-6 flex gap-1 border-b border-line">
-        {TABS.map((t) => (
+        {tabs.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
@@ -74,7 +78,7 @@ function Admin() {
       </div>
       <div className="mt-6">
         {tab === "movies" && <MoviesTab editId={editId} />}
-        {tab === "users" && <UsersTab />}
+        {tab === "users" && user?.role === "superadmin" && <UsersTab />}
         {tab === "activity" && <ActivityTab />}
       </div>
     </div>
@@ -388,8 +392,9 @@ function UsersTab() {
   return (
     <div>
       <p className="mb-4 max-w-3xl text-sm text-muted">
-        Role changes go through the <code className="text-gold">set_user_role</code> stored procedure, which refuses to remove
-        the last admin. Password hashes are not readable here: the admin role has no privilege on that column.
+        Only the super admin sees this tab. Role changes go through the <code className="text-gold">set_user_role</code> stored
+        procedure (viewer or admin only), and a trigger stops anyone demoting or deleting the super admin. Password hashes are
+        not readable here: no role has a privilege on that column.
       </p>
       {error && <p className="mb-4 rounded-md border border-red/50 bg-red/10 px-3 py-2 text-sm text-red">{error}</p>}
       <div className="overflow-x-auto rounded-lg border border-line">
@@ -411,6 +416,9 @@ function UsersTab() {
                   {u.name} {u.id === me?.id && <span className="text-xs text-muted">(you)</span>}
                 </td>
                 <td className="px-3 py-2">
+                  {u.role === "superadmin" ? (
+                    <span className="rounded-full bg-gold px-2 py-0.5 text-xs font-medium text-ink">super admin</span>
+                  ) : (
                   <select
                     aria-label={`Role for ${u.name}`}
                     value={u.role}
@@ -420,12 +428,13 @@ function UsersTab() {
                     <option value="viewer">viewer</option>
                     <option value="admin">admin</option>
                   </select>
+                  )}
                 </td>
                 <td className="px-3 py-2">{u.rating_count}</td>
                 <td className="px-3 py-2">{u.active_sessions}</td>
                 <td className="px-3 py-2 text-muted">{new Date(u.created_at).toLocaleDateString()}</td>
                 <td className="px-3 py-2 text-right">
-                  {u.id !== me?.id && (
+                  {u.id !== me?.id && u.role !== "superadmin" && (
                     <button onClick={() => remove(u)} className="text-muted hover:text-red">
                       Delete
                     </button>

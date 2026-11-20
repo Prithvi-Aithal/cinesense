@@ -2,10 +2,11 @@
 --
 --   cinesense_anon    visitors who are not logged in: read the catalog, register, log in
 --   cinesense_viewer  logged-in users (inherits anon): rate movies, but only their own rows (row-level security)
---   cinesense_admin   administrators (inherits viewer): manage movies, genres and users, read the audit log
+--   cinesense_admin   administrators (inherits viewer): manage movies, genres and vectors, read the audit log
+--   cinesense_superadmin  the one super admin (inherits admin): also manages users and their roles
 --   cinesense_app     the login the web app connects with. NOINHERIT: on its own it can do nothing.
---                     For every request the app runs SET LOCAL ROLE to anon, viewer or admin, so each query
---                     executes with exactly the privileges of the signed-in user's role.
+--                     For every request the app runs SET LOCAL ROLE to anon, viewer, admin or superadmin, so
+--                     each query executes with exactly the privileges of the signed-in user's role.
 --
 -- Run last, after the tables, functions and triggers exist. Safe to re-run.
 
@@ -14,15 +15,17 @@ BEGIN
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cinesense_anon')   THEN CREATE ROLE cinesense_anon   NOLOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cinesense_viewer') THEN CREATE ROLE cinesense_viewer NOLOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cinesense_admin')  THEN CREATE ROLE cinesense_admin  NOLOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cinesense_superadmin') THEN CREATE ROLE cinesense_superadmin NOLOGIN; END IF;
   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'cinesense_app')    THEN CREATE ROLE cinesense_app    LOGIN NOINHERIT; END IF;
 END
 $$;
 
--- Role hierarchy: admin ⊇ viewer ⊇ anon.
+-- Role hierarchy: superadmin ⊇ admin ⊇ viewer ⊇ anon.
 GRANT cinesense_anon   TO cinesense_viewer;
 GRANT cinesense_viewer TO cinesense_admin;
--- The app may switch to any of the three, but inherits none of their privileges.
-GRANT cinesense_anon, cinesense_viewer, cinesense_admin TO cinesense_app;
+GRANT cinesense_admin  TO cinesense_superadmin;
+-- The app may switch to any of the four, but inherits none of their privileges.
+GRANT cinesense_anon, cinesense_viewer, cinesense_admin, cinesense_superadmin TO cinesense_app;
 DO $$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO cinesense_app', current_database()); END $$;
 
 -- Start from nothing, then grant only what each role needs.
@@ -44,17 +47,21 @@ GRANT EXECUTE ON FUNCTION bayesian_score(numeric, int, numeric, int), register_u
 GRANT INSERT, DELETE ON ratings TO cinesense_viewer;
 GRANT UPDATE (rating) ON ratings TO cinesense_viewer;          -- column-level: only the rating can change
 
--- ---------- admin: manage the catalog and the users ----------
+-- ---------- admin: manage the catalog (movies, genres, vectors) and read the audit log ----------
 GRANT INSERT, UPDATE, DELETE ON movies, genres, movie_genres TO cinesense_admin;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO cinesense_admin;
-GRANT SELECT (id, name, role, created_at) ON users TO cinesense_admin;   -- never password_hash
-GRANT UPDATE (role) ON users TO cinesense_admin;
-GRANT DELETE ON users TO cinesense_admin;
+GRANT SELECT (id, name, role, created_at) ON users TO cinesense_admin;   -- read only (names for the audit log); never password_hash
 GRANT SELECT ON rating_audit TO cinesense_admin;
-GRANT SELECT (user_id, created_at, expires_at) ON sessions TO cinesense_admin;  -- never token_hash
 GRANT EXECUTE ON PROCEDURE add_movie(text, int, text, text, text[], vector, int),
                            update_movie(int, text, int, text, text, text[], vector),
-                           set_movie_genres(int, text[]), set_user_role(int, text) TO cinesense_admin;
+                           set_movie_genres(int, text[]) TO cinesense_admin;
+
+-- ---------- superadmin: everything admin can do, plus manage users and their roles ----------
+-- A regular admin has none of these, so PostgreSQL refuses user changes from them.
+GRANT UPDATE (role) ON users TO cinesense_superadmin;
+GRANT DELETE ON users TO cinesense_superadmin;
+GRANT SELECT (user_id, created_at, expires_at) ON sessions TO cinesense_superadmin;  -- never token_hash
+GRANT EXECUTE ON PROCEDURE set_user_role(int, text) TO cinesense_superadmin;
 
 -- ---------- row-level security on ratings ----------
 -- Everyone may read ratings (averages and counts are public), but a viewer may only add, change or delete

@@ -42,7 +42,7 @@ Browser ──> Next.js pages (React) ──> Next.js API routes ─────
   - **SQL:** identity and facts. Users, ratings (with constraints), genres (M:N), aggregates such as average rating, and filters.
   - **Vector:** meaning. Similar movies, free-text "meaning" search, and closeness to a user's taste.
   - **Hybrid:** recommendations need both. SQL says what you liked and what to exclude, and the vector search finds what's close to it.
-- **Security boundary.** The app logs in as `cinesense_app`, a role with no privileges of its own. Each request runs in one transaction that switches to `cinesense_anon`, `cinesense_viewer` or `cinesense_admin` according to the session, so PostgreSQL itself decides what each user may read or change (section 8).
+- **Security boundary.** The app logs in as `cinesense_app`, a role with no privileges of its own. Each request runs in one transaction that switches to `cinesense_anon`, `cinesense_viewer`, `cinesense_admin` or `cinesense_superadmin` according to the session, so PostgreSQL itself decides what each user may read or change (section 8).
 
 ---
 
@@ -84,7 +84,8 @@ rating_audit (id, action, user_id, movie_id, old_rating, new_rating, changed_by,
 | `UNIQUE (title, year)` | movies | natural key (remakes share titles but not years) |
 | `UNIQUE (name)` | users, genres | no duplicates |
 | `FOREIGN KEY … ON DELETE CASCADE` | ratings, movie_genres, sessions | deleting a user or movie removes its dependent rows, so no orphans |
-| `CHECK (role IN ('admin', 'viewer'))` | users | only the two defined roles can exist |
+| `CHECK (role IN ('superadmin', 'admin', 'viewer'))` | users | only the three defined roles can exist |
+| partial unique index `users_one_superadmin` | users | at most one row with `role = 'superadmin'` |
 | `CHECK (expires_at > created_at)` | sessions | a session can't expire before it starts |
 | `CHECK (action IN ('INSERT','UPDATE','DELETE'))` | rating_audit | domain integrity for the log |
 
@@ -246,7 +247,7 @@ All live in [`db/functions.sql`](../db/functions.sql) and run inside PostgreSQL.
 | `add_movie(...)` | **procedure** with an INOUT id | inserts a movie with its vector and links its genres, creating new genres | Admin → Add movie |
 | `update_movie(...)` | procedure | edits a movie, its genres and (optionally) its vector | Admin → Edit |
 | `set_movie_genres(movie, genres[])` | procedure | replaces a movie's genre links (called by the two above) | |
-| `set_user_role(user, role)` | procedure | promotes or demotes a user, refusing to remove the last admin | Admin → Users |
+| `set_user_role(user, role)` | procedure | promotes a viewer to admin or demotes an admin to viewer; EXECUTE is granted only to the super admin | Admin → Users & roles |
 
 **Triggers**
 
@@ -255,6 +256,7 @@ All live in [`db/functions.sql`](../db/functions.sql) and run inside PostgreSQL.
 | `trg_ratings_audit` | AFTER INSERT, UPDATE OF rating, DELETE on ratings, per row | writes every rating change to `rating_audit` with the old and new value, the signed-in user and the database role. The function is SECURITY DEFINER, so viewers can write the log only through the trigger. Re-saving the same value is ignored. Ratings removed by a cascading delete are logged too. |
 | `trg_ratings_touch` | BEFORE UPDATE OF rating, only `WHEN (OLD.rating IS DISTINCT FROM NEW.rating)` | sets `rated_at = now()`, so the timestamp moves only on a real change and the upsert doesn't need to set it |
 | `trg_movies_stale_embedding` | BEFORE UPDATE OF title, description on movies | if the text changed but no new vector was supplied, clears the old vector, so similarity search never uses a description that no longer exists. This keeps the SQL data and the vector data consistent. |
+| `trg_users_protect_superadmin` | BEFORE UPDATE OF role OR DELETE on users | refuses to demote or delete the super admin, whether the change comes from the website or from psql as the database owner |
 
 **Query types used** (all visible in the Query Lab with their EXPLAIN ANALYZE plans)
 
@@ -273,19 +275,20 @@ All live in [`db/functions.sql`](../db/functions.sql) and run inside PostgreSQL.
 
 **Authentication.** Passwords are hashed with bcrypt (`crypt(password, gen_salt('bf'))` from pgcrypto) inside `register_user()`. `login()` compares hashes in the database and creates a session with a random 256-bit token. Only the token's SHA-256 hash is stored, and the token goes to the browser in an **httpOnly, SameSite=Lax** cookie that page scripts cannot read. Logging out deletes the session row; deleting a user cascades to their sessions.
 
-**Roles.** Two application roles, `viewer` and `admin`, map to database roles in a hierarchy ([`db/security.sql`](../db/security.sql)):
+**Roles.** Three application roles, `viewer`, `admin` and `superadmin`, map to database roles in a hierarchy ([`db/security.sql`](../db/security.sql)):
 
 | Database role | Who | Privileges |
 |---|---|---|
 | `cinesense_anon` | visitors | SELECT on the catalog (movies, genres, movie_genres, movie_details, ratings); EXECUTE on register, login and whoami |
 | `cinesense_viewer` (inherits anon) | logged-in users | INSERT and DELETE on ratings and UPDATE of the `rating` column only (a column-level grant), all limited to **their own rows** by row-level security |
-| `cinesense_admin` (inherits viewer) | administrators | INSERT, UPDATE and DELETE on movies, genres and movie_genres; UPDATE of `users.role`; DELETE on users; SELECT on rating_audit; EXECUTE on the catalog procedures. SELECT on users and sessions is column-level and excludes `password_hash` and `token_hash`. |
-| `cinesense_app` | the Next.js server's login | **NOINHERIT** and no privileges of its own; it may only `SET ROLE` to the three roles above |
+| `cinesense_admin` (inherits viewer) | administrators (e.g. `editor`) | INSERT, UPDATE and DELETE on movies, genres and movie_genres; SELECT on rating_audit; EXECUTE on the catalog procedures. SELECT on users is column-level (names for the audit log) and excludes `password_hash`. **No** user management. |
+| `cinesense_superadmin` (inherits admin) | the one super admin (`admin`) | everything above, plus UPDATE of `users.role`, DELETE on users, column-level SELECT on sessions (never `token_hash`) and EXECUTE on `set_user_role`. Protected by `trg_users_protect_superadmin` and a partial unique index. |
+| `cinesense_app` | the Next.js server's login | **NOINHERIT** and no privileges of its own; it may only `SET ROLE` to the four roles above |
 
 **How a request runs** (`withSession()` in [`lib/db.ts`](../lib/db.ts)):
 1. `BEGIN`, then `SET LOCAL ROLE cinesense_anon` and `set_config('app.session_token', <cookie>, true)`.
 2. `whoami()` validates the token in the database and returns the user and role.
-3. `SET LOCAL ROLE cinesense_viewer` or `cinesense_admin`, then the route's queries run, then `COMMIT`.
+3. `SET LOCAL ROLE cinesense_viewer`, `cinesense_admin` or `cinesense_superadmin`, then the route's queries run, then `COMMIT`.
 
 **Row-level security** on `ratings`: everyone may read (averages are public), but the viewer policies require `user_id = current_app_user()` for INSERT, UPDATE and DELETE, and an admin policy allows every row. Because `current_app_user()` checks the session token against the `sessions` table, even a bug in the app that passed the wrong user id would be refused by the database (error 42501, returned as HTTP 403).
 
@@ -348,12 +351,12 @@ Testing showed each step working: a new movie about a robot was the top meaning-
 12. **What happens when a user is deleted?** `ON DELETE CASCADE` removes their ratings and sessions automatically, and the audit trigger records each removed rating, so the history survives in `rating_audit`.
 13. **Where does the embedding model run?** Locally, inside the Next.js server process (ONNX Runtime), with no external API. Movie embeddings are precomputed at seed time. Only free-text search embeds at request time.
 14. **How would you scale to a million movies?** The HNSW index is already in place. Tune `ef_search`, add partial indexes for hot filters, cache cold-start results, and batch-embed new movies in a background job.
-15. **How is role-based access control enforced in the database, not just the app?** The app's login role `cinesense_app` is NOINHERIT with no privileges. Every request runs `SET LOCAL ROLE` to `cinesense_anon`, `cinesense_viewer` or `cinesense_admin`, so PostgreSQL's GRANTs decide what each query may touch. A viewer trying to delete a movie gets `permission denied` (42501) from the database itself.
+15. **How is role-based access control enforced in the database, not just the app?** The app's login role `cinesense_app` is NOINHERIT with no privileges. Every request runs `SET LOCAL ROLE` to `cinesense_anon`, `cinesense_viewer`, `cinesense_admin` or `cinesense_superadmin`, so PostgreSQL's GRANTs decide what each query may touch. A viewer trying to delete a movie gets `permission denied` (42501) from the database itself.
 16. **What is row-level security and how do you use it?** Policies on a table filter which rows a role can see or change. On `ratings`, viewers may only insert, update or delete rows where `user_id = current_app_user()`, a function that validates the session token in the database. Admins have a policy that allows all rows.
 17. **Why SECURITY DEFINER on some functions?** They run with the owner's rights, so restricted roles can use them without direct table access: `login()` can read `password_hash` that no role may SELECT, and the audit trigger can write `rating_audit` that viewers can't INSERT into. Each sets `search_path` to stop a caller from shadowing objects.
 18. **How are passwords stored?** As bcrypt hashes from pgcrypto's `crypt(p, gen_salt('bf'))`, with a per-password salt. Login recomputes `crypt(input, stored_hash)` and compares. Session tokens are random 256-bit values; only their SHA-256 hash is stored, so a copied sessions table can't be used to log in.
 19. **Function vs procedure?** A function returns a value and can be used inside a query (`SELECT bayesian_score(…)`); a procedure is invoked with `CALL`, returns results only through INOUT parameters, and may manage transactions. `add_movie` is a procedure because it performs several writes as one operation.
 20. **Explain the recursive CTE.** The anchor member selects the starting movie. The recursive member joins the previous step to its nearest movie not yet in the `path` array (a LATERAL subquery with `ORDER BY embedding <=> … LIMIT 1`). It stops after `p_steps` iterations or when no new movie is found.
-21. **What do your triggers do?** `trg_ratings_audit` logs every rating insert, change and delete with the old and new value, the user and the database role. `trg_ratings_touch` updates `rated_at` only when the value changes. `trg_movies_stale_embedding` clears a movie's vector when its text changes without a new one, keeping the vector data consistent with the SQL data.
+21. **What do your triggers do?** `trg_ratings_audit` logs every rating insert, change and delete with the old and new value, the user and the database role. `trg_ratings_touch` updates `rated_at` only when the value changes. `trg_movies_stale_embedding` clears a movie's vector when its text changes without a new one, keeping the vector data consistent with the SQL data. `trg_users_protect_superadmin` refuses to demote or delete the super admin.
 22. **Correlated vs nested subquery?** A nested subquery runs once, independent of the outer query (`NOT IN (SELECT user_id … )`). A correlated one refers to the outer row and is logically re-run per row (`NOT EXISTS (SELECT 1 FROM ratings r WHERE r.movie_id = m.id)`).
 23. **How does the Chen ER diagram map to tables?** Each entity becomes a table with its key attribute as the primary key. An M:N relationship becomes its own table whose primary key combines the two foreign keys: RATES becomes `ratings (user_id, movie_id)` and keeps its own attributes `rating` and `rated_at`, and CLASSIFIED_AS becomes `movie_genres`. A 1:N relationship becomes a foreign key on the N side, so HAS becomes `sessions.user_id`, which is `NOT NULL` because SESSION participates totally. Derived attributes such as `avg_rating` are not stored; the `movie_details` view computes them.

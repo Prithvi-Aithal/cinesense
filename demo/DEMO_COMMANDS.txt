@@ -56,7 +56,8 @@
 --           click  Log out .
 --
 --  Logins for the website (Log in, top right):
---  TYPE:  admin    /  admin123      (admin)
+--  TYPE:  admin    /  admin123      (SUPER ADMIN: everything, including Users & roles)
+--  TYPE:  editor   /  editor123     (ADMIN: movies & vectors, activity log; no Users & roles)
 --  TYPE:  Aarav    /  viewer123     (viewer)
 --
 --  ---------------- Q: "WHERE IS THE CONNECTION STRING?" ----------------
@@ -90,6 +91,7 @@
 --   "Show the vector queries"                             -> 7
 --   "Why did you use this?" (justification)               -> 10
 --   "Show roles / security / RBAC"                        -> 8
+--   "Show the NEW feature" (super admin vs admin)         -> 8b
 --   "Change something now" (modification)                 -> 9   (M1-M12)
 --   "Where is the connection string?"                     -> 0 (just above)
 --   "Where is X in the code?"                             -> 11  (one  code -g  line per item)
@@ -356,7 +358,7 @@ SELECT user_id, name, role, left(token, 12) || '...' AS token FROM login('DemoUs
 SELECT COUNT(*) AS wrong_password_rows FROM login('DemoUser', 'wrongpass');                        -- 0 rows
 SELECT register_user('DemoUser', 'demo123');                         -- EXPECTED ERROR: UNIQUE(name)
 SELECT id AS admin_uid FROM users WHERE name = 'admin' \gset
-CALL set_user_role(:admin_uid, 'viewer');                            -- EXPECTED ERROR: cannot remove the last admin
+CALL set_user_role(:admin_uid, 'viewer');                            -- EXPECTED ERROR: the super admin can't be demoted
 DELETE FROM users WHERE name = 'DemoUser' RETURNING id, name;
 
 -- Q: "Insert / update a movie the way the app does" (Admin -> Add movie / Save and re-embed)
@@ -434,10 +436,11 @@ ORDER BY embedding <=> (SELECT embedding FROM movies WHERE title = 'Demo Night')
 SELECT count(*) AS still_there FROM movies WHERE title = 'Demo Night';      -- 0
 
 -- STEP 8  Q: "Change a role / delete a user in the UI"  (UPDATE / DELETE users)
+--   (logged in as admin = the SUPER ADMIN; only he has this tab)
 --   Admin -> click the  Users & roles  tab -> DemoStudent's role dropdown -> choose  admin
 SELECT id, name, role FROM users WHERE name = 'DemoStudent';                -- role admin
---   set DemoStudent back to  viewer . Then try admin's own dropdown -> viewer
---   -> the website shows "Cannot remove the last admin." (the set_user_role procedure refused)
+--   set DemoStudent back to  viewer . The admin row shows a "super admin" badge with no
+--   dropdown and no Delete: the super admin can't be changed (more in section 8b)
 --   finally click  Delete  on the DemoStudent row -> OK
 SELECT count(*) AS demostudent_rows FROM users WHERE name = 'DemoStudent';  -- 0
 
@@ -453,10 +456,11 @@ UPDATE movies SET director = 'Rajkumar Hirani' WHERE title = '3 Idiots';
 \echo =====================================================================
 
 -- ---------- 6.1 TRIGGERS ----------
---   code: all three are at the bottom of db/functions.sql
+--   code: all four are at the bottom of db/functions.sql
 --     trg_ratings_audit          :236  AFTER INSERT/UPDATE/DELETE ON ratings  -> function audit_rating_change :214
 --     trg_ratings_touch          :252  BEFORE UPDATE OF rating ON ratings     -> function touch_rated_at :242
 --     trg_movies_stale_embedding :273  BEFORE UPDATE OF title, description ON movies -> invalidate_stale_embedding :260
+--     trg_users_protect_superadmin :296  BEFORE UPDATE OF role OR DELETE ON users -> protect_superadmin :281 (section 8b)
 --   Nothing calls a trigger: PostgreSQL runs it on every matching INSERT/UPDATE/DELETE.
 --   In the app they fire from: the stars (POST /api/ratings, app/api/ratings/route.ts:16),
 --   Remove rating (DELETE /api/ratings, :27), Admin -> Edit movie (update_movie), and any
@@ -465,6 +469,7 @@ UPDATE movies SET director = 'Rajkumar Hirani' WHERE title = '3 Idiots';
 --  PS> code -g db/functions.sql:236     (trg_ratings_audit; its function starts at 214)
 --  PS> code -g db/functions.sql:252     (trg_ratings_touch; function at 242)
 --  PS> code -g db/functions.sql:273     (trg_movies_stale_embedding; function at 260)
+--  PS> code -g db/functions.sql:296     (trg_users_protect_superadmin; function at 281)
 --  PS> code -g lib/queries.ts:50        (the upsert the stars run, which fires them)
 --  PS> code -g app/api/ratings/route.ts:16
 --   Show their effect in the website: log in as admin -> Admin -> Activity log tab
@@ -895,8 +900,8 @@ SELECT id, title FROM movies WHERE embedding IS NULL;
 --  PS> Start-Process "http://localhost:3000/lab"
 --   -> Query Lab: click "Role privileges" and "Row-level security policies"; they read these
 --      rules live from PostgreSQL. (Query Lab is admin-only, so this does not work as Aarav.)
---  PS> code -g db/security.sql:39       (GRANTs per role)
---  PS> code -g db/security.sql:63       (row-level security policies)
+--  PS> code -g db/security.sql:42       (GRANTs per role)
+--  PS> code -g db/security.sql:70       (row-level security policies)
 --  PS> code -g lib/db.ts:39             (withSession: SET LOCAL ROLE for every request)
 
 -- Q: "What database roles do you have?"
@@ -927,6 +932,67 @@ ROLLBACK;
 
 SELECT policyname, cmd, roles, qual AS using_expr, with_check
 FROM pg_policies WHERE tablename = 'ratings' ORDER BY policyname;
+
+
+\echo
+\echo =====================================================================
+\echo  8b. NEW FEATURE: SUPER ADMIN (only admin manages users; regular admins manage movies)
+\echo =====================================================================
+-- SAY: "There are now two kinds of admin. 'admin' is the one super admin: only he can see
+--   Users & roles, change roles and delete users, and he can never be demoted or deleted.
+--   A regular admin like 'editor' can only manage movies and vectors and read the activity log.
+--   It is enforced in the UI, the API, GRANTs, and a BEFORE trigger in PostgreSQL."
+-- In the website, STEP 1 (regular admin): Log out, then Log in:
+--  TYPE:  name  editor     password  editor123
+--  PS> Start-Process "http://localhost:3000/admin"
+--   -> only two tabs: "Movies & vectors" and "Activity log" (no "Users & roles"); + Add movie works
+-- STEP 2 (super admin): Log out, then Log in:
+--  TYPE:  name  admin      password  admin123
+--   -> top right says "super admin"; Admin now also has "Users & roles"; the admin row shows a
+--      "super admin" badge with no role dropdown and no Delete button
+-- Show the code:
+--  PS> code -g db/schema.sql:17         (role CHECK: superadmin, admin, viewer)
+--  PS> code -g db/indexes.sql:19        (partial unique index: only one super admin)
+--  PS> code -g db/security.sql:59       (GRANTs only the super admin has)
+--  PS> code -g db/functions.sql:281     (the protect_superadmin trigger)
+--  PS> code -g lib/http.ts:64           (API: "Only the super admin can manage users.")
+--  PS> code -g app/admin/page.tsx:56    (UI: Users & roles tab only for the super admin)
+
+-- Q: "Who is what?"
+SELECT name, role FROM users WHERE role <> 'viewer' ORDER BY role DESC, name;
+SELECT r.rolname AS role, m.rolname AS member_of
+FROM pg_auth_members am JOIN pg_roles r ON r.oid = am.member JOIN pg_roles m ON m.oid = am.roleid
+WHERE r.rolname IN ('cinesense_admin', 'cinesense_superadmin');
+SELECT id AS aarav_uid FROM users WHERE name = 'Aarav' \gset
+SELECT id AS super_uid FROM users WHERE name = 'admin' \gset
+
+-- Q: "Can a regular admin change a user's role or delete a user?" - no (GRANTs)
+BEGIN;
+SET LOCAL ROLE cinesense_admin;
+UPDATE movies SET director = director WHERE title = 'Up' RETURNING title;   -- movies: allowed
+CALL set_user_role(:aarav_uid, 'admin');                  -- EXPECTED ERROR: permission denied for procedure
+ROLLBACK;
+BEGIN;
+SET LOCAL ROLE cinesense_admin;
+DELETE FROM users WHERE name = 'Aarav';                   -- EXPECTED ERROR: permission denied for table users
+ROLLBACK;
+
+-- Q: "Can the super admin?" - yes (then undone with ROLLBACK)
+BEGIN;
+SET LOCAL ROLE cinesense_superadmin;
+CALL set_user_role(:aarav_uid, 'admin');
+SELECT name, role FROM users WHERE name = 'Aarav';        -- admin
+ROLLBACK;
+
+-- Q: "Can anyone demote or delete the super admin?" - no, not even the database owner (BEFORE trigger)
+UPDATE users SET role = 'viewer' WHERE name = 'admin';    -- EXPECTED ERROR: The super admin can't be demoted or deleted.
+DELETE FROM users WHERE name = 'admin';                   -- EXPECTED ERROR: The super admin can't be demoted or deleted.
+CALL set_user_role(:super_uid, 'viewer');                 -- EXPECTED ERROR: The super admin can't be demoted or deleted.
+
+-- Q: "Can someone else become super admin?" - no
+CALL set_user_role(:aarav_uid, 'superadmin');             -- EXPECTED ERROR: Role must be admin or viewer.
+UPDATE users SET role = 'superadmin' WHERE name = 'editor';   -- EXPECTED ERROR: unique index users_one_superadmin
+SELECT name, role FROM users WHERE role <> 'viewer' ORDER BY role DESC, name;   -- unchanged
 
 
 \echo
@@ -1135,7 +1201,8 @@ DROP VIEW user_stats;
 --  PS> code -g db/functions.sql:28      functions: bayesian_score 28, register_user 40, login 59, current_app_user 82, whoami 92, logout 99, similarity_trail 113
 --  PS> code -g db/functions.sql:144     procedures: set_movie_genres 144, add_movie 161, update_movie 175, set_user_role 192
 --  PS> code -g db/functions.sql:214     triggers: audit 214/236, touch 242/252, stale embedding 260/273
---  PS> code -g db/security.sql:14       roles 14, GRANTs 36, row-level security 63
+--  PS> code -g db/security.sql:15       roles 15, GRANTs 39, super admin GRANTs 59, row-level security 70
+--  PS> code -g db/functions.sql:281     super admin trigger: protect_superadmin 281, trg_users_protect_superadmin 296
 --  PS> code -g scripts/seed.ts:78       the seed runs schema 78, indexes 145, functions 146, security 147
 -- Connection and request path
 --  PS> code -g .env.local:1             connection strings
@@ -1154,12 +1221,12 @@ DROP VIEW user_stats;
 --  PS> code -g components/Nav.tsx:63                 Log out button
 --  PS> code -g app/page.tsx:87                       Keyword / Meaning buttons (search request at 44)
 --  PS> code -g app/api/movies/route.ts:12            GET search (keyword or vector) and POST add movie (49)
---  PS> code -g app/admin/page.tsx:281                + Add movie button; Save at 264, save() at 130
---  PS> code -g app/admin/page.tsx:323                Edit 323, Re-embed 324 (reembed() 163), Delete 327 (remove() 177)
+--  PS> code -g app/admin/page.tsx:285                + Add movie button; Save at 268, save() at 134
+--  PS> code -g app/admin/page.tsx:327                Edit 327, Re-embed 328 (reembed() 167), Delete 331 (remove() 181)
 --  PS> code -g app/api/movies/[id]/route.ts:23       PATCH edit / re-embed, DELETE movie (48)
---  PS> code -g app/admin/page.tsx:417                role dropdown (setRole() 363), Delete user 429
+--  PS> code -g app/admin/page.tsx:425                role dropdown (setRole() 367), Delete user 438
 --  PS> code -g app/api/users/[id]/route.ts:8         PATCH role -> set_user_role, DELETE user (21)
---  PS> code -g app/admin/page.tsx:448                Activity log tab -> GET /api/audit
+--  PS> code -g app/admin/page.tsx:457                Activity log tab -> GET /api/audit
 --  PS> code -g app/recommendations/page.tsx:39       For You -> GET /api/recommendations
 --  PS> code -g app/api/recommendations/route.ts:15   taste vector -> SQL.recommend / SQL.popular
 

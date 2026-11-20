@@ -13,10 +13,10 @@ import { embed, movieText, MODEL_ID, EMBEDDING_DIMS } from "../lib/embeddings";
 import { toPgVector } from "../lib/vector";
 
 type Movie = { title: string; year: number; director: string; genres: string[]; description: string };
-type UserSpec = { name: string; role?: "admin" | "viewer"; likes: string[]; dislikes: string[] };
+type UserSpec = { name: string; role?: "superadmin" | "admin" | "viewer"; likes: string[]; dislikes: string[] };
 
 // Demo passwords, listed in the README. Hashed with bcrypt inside the database.
-const DEMO_PASSWORD = { admin: "admin123", viewer: "viewer123" } as const;
+const DEMO_PASSWORD = { superadmin: "admin123", admin: "editor123", viewer: "viewer123" } as const;
 
 // Creating roles, functions and policies needs the database owner, not the app's restricted login.
 const ownerUrl = process.env.DATABASE_OWNER_URL ?? process.env.DATABASE_URL;
@@ -148,7 +148,7 @@ async function main() {
     await setAppPassword(client);
     await client.query("COMMIT");
     console.log(`Seeded ${genreNames.length} genres, ${movies.length} movies, ${users.length} users, ${ratingCount} ratings.`);
-    console.log("Created roles cinesense_anon, cinesense_viewer, cinesense_admin and login role cinesense_app.");
+    console.log("Created roles cinesense_anon, cinesense_viewer, cinesense_admin, cinesense_superadmin and login role cinesense_app.");
   } catch (e) {
     await client.query("ROLLBACK");
     throw e;
